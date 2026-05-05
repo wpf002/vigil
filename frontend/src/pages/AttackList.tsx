@@ -1,0 +1,164 @@
+import { useQuery } from "@tanstack/react-query";
+import { listAttacks } from "@/api/attacks";
+import { AttackCard } from "@/components/AttackCard";
+import { StatsBanner } from "@/components/StatsBanner";
+import { useAttackStore } from "@/store/attackStore";
+import { PHASE_ORDER } from "@/types/attacks";
+import type { MITRETactic, Momentum } from "@/types/attacks";
+import { phaseLabel } from "@/lib/format";
+
+export function AttackList() {
+  const filters = useAttackStore((s) => s.filters);
+  const setPhaseFilter = useAttackStore((s) => s.setPhaseFilter);
+  const setMomentumFilter = useAttackStore((s) => s.setMomentumFilter);
+  const setMinConfidence = useAttackStore((s) => s.setMinConfidence);
+  const resetFilters = useAttackStore((s) => s.resetFilters);
+
+  const filtersActive =
+    filters.phase != null ||
+    filters.momentum != null ||
+    (filters.min_confidence ?? 0) > 0;
+
+  const query = useQuery({
+    queryKey: ["attacks", filters],
+    queryFn: () => listAttacks(filters),
+    refetchInterval: 30_000,
+  });
+
+  const attacks = query.data ?? [];
+
+  return (
+    <div className="px-6 py-6 max-w-[1400px] mx-auto">
+      <div className="mb-5">
+        <h1 className="text-xl font-mono text-fg">Active Threats</h1>
+      </div>
+
+      <StatsBanner />
+
+      <div className="mb-3 flex flex-wrap items-center gap-3 px-3 py-2 border border-border rounded bg-surface">
+        <select
+          className="vigil-input py-1 text-xs"
+          value={filters.phase ?? ""}
+          onChange={(e) =>
+            setPhaseFilter((e.target.value || null) as MITRETactic | null)
+          }
+        >
+          <option value="">All Phases</option>
+          {PHASE_ORDER.map((p) => (
+            <option key={p} value={p}>
+              {phaseLabel(p)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          className="vigil-input py-1 text-xs"
+          value={filters.momentum ?? ""}
+          onChange={(e) =>
+            setMomentumFilter((e.target.value || null) as Momentum | null)
+          }
+        >
+          <option value="">All Momentum</option>
+          <option value="Increasing">Increasing</option>
+          <option value="Stable">Stable</option>
+          <option value="Decreasing">Decreasing</option>
+        </select>
+
+        <div className="inline-flex items-center gap-2 text-xs font-mono text-fg-muted">
+          <span>Confidence ≥</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={filters.min_confidence ?? 0}
+            onChange={(e) => setMinConfidence(parseFloat(e.target.value))}
+            className="accent-accent w-28"
+          />
+          <span className="text-fg w-9 text-right tabular-nums">
+            {Math.round((filters.min_confidence ?? 0) * 100)}%
+          </span>
+        </div>
+
+        <div className="flex-1" />
+
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="text-[11px] font-mono text-fg-muted hover:text-accent"
+          >
+            Clear
+          </button>
+        )}
+
+        <span className="text-[11px] font-mono text-fg-faint tabular-nums">
+          {attacks.length} {attacks.length === 1 ? "Threat" : "Threats"}
+        </span>
+      </div>
+
+      {query.isLoading ? (
+        <SkeletonList />
+      ) : query.isError ? (
+        <div className="vigil-card p-6 border-accent/40 bg-accent/5 text-accent font-mono text-sm">
+          Failed To Load Threats: {(query.error as Error).message}
+        </div>
+      ) : attacks.length === 0 ? (
+        <EmptyState filtersActive={filtersActive} onReset={resetFilters} />
+      ) : (
+        <ol className="space-y-1.5">
+          {attacks.map((a) => (
+            <li key={a.attack_id}>
+              <AttackCard attack={a} />
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({
+  filtersActive,
+  onReset,
+}: {
+  filtersActive: boolean;
+  onReset: () => void;
+}) {
+  if (filtersActive) {
+    return (
+      <div className="vigil-card p-12 text-center font-mono">
+        <div className="text-fg text-sm">No Threats Match These Filters.</div>
+        <button
+          type="button"
+          onClick={onReset}
+          className="mt-3 text-xs text-accent hover:text-accent-hover"
+        >
+          Clear Filters
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="vigil-card p-12 text-center font-mono">
+      <div className="text-fg text-sm">No Active Threats.</div>
+      <div className="text-fg-muted text-xs mt-2 max-w-md mx-auto">
+        The Correlation Engine Is Listening For Detection Signals.
+      </div>
+    </div>
+  );
+}
+
+function SkeletonList() {
+  return (
+    <div className="space-y-1.5">
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          className="vigil-card p-4 animate-pulse-soft h-[88px]"
+          aria-hidden
+        />
+      ))}
+    </div>
+  );
+}

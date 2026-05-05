@@ -25,6 +25,20 @@ jobs:
           python-version: '3.12'
       - run: cd services/attack-state-engine && pip install -r requirements.txt && pytest tests/ -v
 
+  test-correlation-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install deps (correlation, attack-state, ingestor)
+        run: |
+          pip install -r services/correlation-engine/requirements.txt
+          pip install -r services/attack-state-engine/requirements.txt
+          pip install -r services/ingestor/requirements.txt
+      - run: cd services/correlation-engine && pytest tests/ -v
+
   lint:
     runs-on: ubuntu-latest
     steps:

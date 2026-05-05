@@ -61,18 +61,18 @@ class AttackStateStatus(str, Enum):
 class EvidenceItem(BaseModel):
     """A single piece of evidence contributing to the attack state."""
     evidence_id: UUID = Field(default_factory=uuid4)
-    signal_id: str                    # CDMEvent.event_id
-    detection_id: Optional[str]       # Links to YAML detection definition
-    rule_name: Optional[str]
+    signal_id: str                              # CDMEvent.event_id
+    detection_id: Optional[str] = None          # Links to YAML detection definition
+    rule_name: Optional[str] = None
     source_siem: str
-    entity_type: str                  # host | user | process | network
-    entity_value: str                 # e.g. "WORKSTATION01", "jsmith"
-    raw_reference: Optional[str]      # Brief human-readable pointer to raw event
+    entity_type: str                            # host | user | process | network
+    entity_value: str                           # e.g. "WORKSTATION01", "jsmith"
+    raw_reference: Optional[str] = None         # Brief human-readable pointer to raw event
     timestamp: datetime
     phase: MITRETactic
-    technique_id: Optional[str]
+    technique_id: Optional[str] = None
     status_contributed: PhaseStatus
-    confidence_contribution: float    # 0.0–1.0
+    confidence_contribution: float              # 0.0–1.0
 
 
 # ─── Phase State ──────────────────────────────────────────────────────────────

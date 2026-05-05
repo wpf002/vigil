@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-bg;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #404040;
+  }
+}
+
+@layer components {
+  .vigil-card {
+    @apply bg-surface border border-border rounded;
+  }
+
+  .vigil-card-hover {
+    @apply transition-colors hover:border-accent/60 hover:bg-surface-2;
+  }
+
+  .vigil-badge {
+    @apply inline-flex items-center px-2 py-0.5 text-[11px] font-mono rounded-sm border;
+  }
+
+  .vigil-input {
+    @apply bg-surface border border-border rounded-sm px-3 py-1.5 text-sm
+      text-fg placeholder:text-fg-faint focus:outline-none focus:border-accent;
+  }
+
+  .vigil-stat {
+    @apply bg-surface border border-border rounded p-4 flex flex-col gap-1;
+  }
+}

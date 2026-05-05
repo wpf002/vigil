@@ -3,10 +3,10 @@
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import pytest
-from ..models.attack_state import (
+from attack_state_engine.models.attack_state import (
     AttackState, EvidenceItem, ImpactLevel, Momentum, MITRETactic, PhaseStatus,
 )
-from ..engine.confidence import ConfidenceEngine, ESCALATION_THRESHOLD
+from attack_state_engine.engine.confidence import ConfidenceEngine, ESCALATION_THRESHOLD
 
 TENANT_ID = "test-tenant"
 
