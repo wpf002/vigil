@@ -1,0 +1,83 @@
+# VIGIL Detection Definition
+# Source of truth. Never edit compiled/ output directly.
+
+detection_id: D1-LSASS-MEMORY-ACCESS
+name: LSASS Memory Access
+description: >
+  Detects process attempting to access LSASS memory.
+  Common technique for credential dumping via direct memory reads.
+  Excludes known-good security tooling by process name.
+
+version: 1.0.0
+status: production
+author: vigil-detection-team
+created: 2024-01-01
+modified: 2024-01-01
+
+att&ck:
+  tactic: credential-access
+  tactic_id: TA0006
+  technique: OS Credential Dumping
+  technique_id: T1003
+  sub_technique: LSASS Memory
+  sub_technique_id: T1003.001
+
+required_telemetry:
+  - source: sysmon
+    event_id: 10
+    description: ProcessAccess events
+  - source: windows_security
+    event_id: 4656
+    description: Handle request to object (alternative)
+
+state_impact:
+  transitions_to: credential-access
+  status: Observed
+  confidence_contribution: 0.25
+  entities_extracted:
+    - type: process
+      field: SourceImage
+    - type: host
+      field: Computer
+
+logic:
+  abstraction: >
+    Process accessing lsass.exe memory space where the source process
+    is not a known-good security or system tool.
+  whitelist:
+    processes:
+      - MsMpEng.exe
+      - CylanceSvc.exe
+      - csrss.exe
+      - wininit.exe
+      - svchost.exe
+      - lsass.exe
+
+  splunk_spl: |
+    index=sysmon EventCode=10 TargetImage="*\\lsass.exe"
+    | where NOT match(SourceImage, "(?i)(MsMpEng|CylanceSvc|csrss|wininit|svchost|lsass)\.exe")
+    | eval detection_id="D1-LSASS-MEMORY-ACCESS"
+    | table _time, Computer, SourceImage, TargetImage, GrantedAccess, CallTrace
+
+  sentinel_kql: |
+    DeviceEvents
+    | where ActionType == "OpenProcess"
+    | where FileName =~ "lsass.exe"
+    | where not(InitiatingProcessFileName has_any ("MsMpEng.exe", "CylanceSvc.exe", "csrss.exe", "wininit.exe", "svchost.exe", "lsass.exe"))
+    | extend detection_id = "D1-LSASS-MEMORY-ACCESS"
+    | project TimeGenerated, DeviceName, InitiatingProcessFileName, FileName, InitiatingProcessCommandLine
+
+  elastic_eql: |
+    process where event.action == "ProcessAccess"
+    and process.name == "lsass.exe"
+    and not source.process.name in (
+      "MsMpEng.exe", "CylanceSvc.exe", "csrss.exe",
+      "wininit.exe", "svchost.exe", "lsass.exe"
+    )
+
+severity: high
+false_positive_risk: medium
+notes: >
+  Tuning required per environment. Add site-specific AV/EDR process names
+  to the whitelist. High false positive risk in environments running
+  security tools that legitimately read LSASS.

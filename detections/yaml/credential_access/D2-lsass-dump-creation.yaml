@@ -1,0 +1,77 @@
+detection_id: D2-LSASS-DUMP-CREATION
+name: LSASS Dump File Creation
+description: >
+  Detects creation of LSASS process memory dump files.
+  Escalates from Observed to Confirmed — dump creation indicates
+  the attacker has successfully extracted credential material.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: credential-access
+  tactic_id: TA0006
+  technique: OS Credential Dumping
+  technique_id: T1003
+  sub_technique: LSASS Memory
+  sub_technique_id: T1003.001
+
+required_telemetry:
+  - source: sysmon
+    event_id: 11
+    description: FileCreate events
+  - source: windows_security
+    event_id: 4663
+    description: File access attempt
+
+state_impact:
+  transitions_to: credential-access
+  status: Confirmed               # This escalates from Observed to Confirmed
+  confidence_contribution: 0.50
+  entities_extracted:
+    - type: process
+      field: Image
+    - type: host
+      field: Computer
+    - type: file
+      field: TargetFilename
+
+logic:
+  abstraction: >
+    Detection of dump file creation targeting LSASS process memory.
+    Common tools: procdump, comsvcs.dll MiniDump, Task Manager, WerFault.
+
+  known_dump_patterns:
+    - "*.dmp"
+    - "lsass*.dmp"
+    - "lsadump*"
+    - "lsass.exe*.dmp"
+
+  splunk_spl: |
+    index=sysmon EventCode=11
+    | where match(TargetFilename, "(?i)(lsass.*\.dmp|lsadump)")
+       OR (match(TargetFilename, "\.dmp$") AND match(Image, "(?i)(procdump|taskman|werfault|comsvcs)"))
+    | eval detection_id="D2-LSASS-DUMP-CREATION"
+    | table _time, Computer, Image, TargetFilename, ProcessId
+
+  sentinel_kql: |
+    DeviceFileEvents
+    | where ActionType == "FileCreated"
+    | where FileName matches regex @"(?i)(lsass.*\.dmp|lsadump)"
+       or (FileName endswith ".dmp" and InitiatingProcessFileName has_any ("procdump", "taskman", "werfault", "comsvcs"))
+    | extend detection_id = "D2-LSASS-DUMP-CREATION"
+    | project TimeGenerated, DeviceName, InitiatingProcessFileName, FileName, FolderPath
+
+  elastic_eql: |
+    file where event.action == "creation"
+    and (
+      file.name like~ "lsass*.dmp"
+      or (file.extension == "dmp" and process.name like~ "(procdump*|werfault*|comsvcs*)")
+    )
+
+severity: critical
+false_positive_risk: low
+notes: >
+  Low false positive risk. Legitimate LSASS dumps are rare outside of
+  Windows Error Reporting (WerFault.exe targeting a crash, not MiniDump API).
+  Confirm WerFault dumps against Windows Event 1000/1001 before closing.

@@ -1,0 +1,95 @@
+detection_id: D4-LATERAL-MOVEMENT-COMPROMISED-CREDS
+name: Lateral Movement with Compromised Credentials
+description: >
+  Detects lateral movement using credentials consistent with those observed
+  in a prior credential access phase. This is a state progression trigger —
+  it advances the AttackState from credential-access to lateral-movement.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: lateral-movement
+  tactic_id: TA0008
+  technique: Remote Services
+  technique_id: T1021
+  sub_techniques:
+    - SMB/Windows Admin Shares (T1021.002)
+    - Remote Desktop Protocol (T1021.001)
+    - Windows Remote Management (T1021.006)
+
+required_telemetry:
+  - source: windows_security
+    event_id: 4648
+    description: Logon using explicit credentials
+  - source: windows_security
+    event_id: 4624
+    description: Successful logon (type 3 = network, type 10 = remote interactive)
+  - source: sysmon
+    event_id: 3
+    description: Network connection from lateral movement tools
+
+state_impact:
+  transitions_to: lateral-movement          # Phase progression
+  status: Observed
+  confidence_contribution: 0.40
+  progression: true                         # Marks this as a kill chain advancement
+  entities_extracted:
+    - type: host
+      field: src_host
+    - type: host
+      field: dest_host
+    - type: user
+      field: TargetUserName
+    - type: process
+      field: ProcessName
+
+logic:
+  abstraction: >
+    Network authentication (Type 3) or remote interactive logon (Type 10)
+    from a host that was previously identified in a credential-access phase.
+    Excludes known-good admin activity patterns.
+
+  splunk_spl: |
+    index=wineventlog (EventCode=4624 LogonType IN (3,10)) OR EventCode=4648
+    | eval src_host=coalesce(WorkstationName, IpAddress)
+    | eval dest_host=ComputerName
+    | where src_host != dest_host
+    | where NOT match(TargetUserName, "(?i)(ANONYMOUS LOGON|\$$)")
+    | eval detection_id="D4-LATERAL-MOVEMENT-COMPROMISED-CREDS"
+    | table _time, src_host, dest_host, TargetUserName, LogonType, AuthenticationPackageName
+
+  sentinel_kql: |
+    SecurityEvent
+    | where EventID in (4624, 4648)
+    | where LogonType in (3, 10)
+    | extend src_host = coalesce(WorkstationName, IpAddress)
+    | where src_host != Computer
+    | where TargetUserName !endswith "$" and TargetUserName != "ANONYMOUS LOGON"
+    | extend detection_id = "D4-LATERAL-MOVEMENT-COMPROMISED-CREDS"
+    | project TimeGenerated, src_host, dest_host = Computer, TargetUserName, LogonType, AuthenticationPackageName
+
+  elastic_eql: |
+    authentication where event.outcome == "success"
+    and winlog.event_data.LogonType in ("3", "10")
+    and source.ip != destination.ip
+    and not user.name like "ANONYMOUS LOGON"
+    and not user.name like~ "*$"
+
+severity: high
+false_positive_risk: medium
+notes: >
+  Best used as a correlation trigger, not a standalone alert.
+  The correlation engine should check if the authenticating user/host
+  appears in an existing credential-access AttackState before escalating.
+  IT admin activity will generate false positives — entity context is required.
+
+response_on_trigger:
+  immediate:
+    - Isolate source host from network
+    - Reset credentials for affected user
+    - Capture forensic snapshot of source host
+  follow_up:
+    - Review authentication logs on destination host
+    - Check for additional lateral movement from destination
+    - Identify all systems touched by compromised credential

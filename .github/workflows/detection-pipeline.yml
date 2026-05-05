@@ -1,0 +1,77 @@
+name: Detection Pipeline
+
+on:
+  pull_request:
+    paths:
+      - 'detections/yaml/**'
+      - 'attack-narratives/**'
+  push:
+    branches: [main]
+    paths:
+      - 'detections/yaml/**'
+      - 'attack-narratives/**'
+
+jobs:
+  validate-and-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml jsonschema
+
+      - name: Validate YAML schema
+        run: python scripts/validate_detections.py detections/yaml/
+
+      - name: Validate attack narratives
+        run: python scripts/validate_narratives.py attack-narratives/
+
+      - name: Compile SPL
+        run: python scripts/compile_detections.py detections/yaml/ --backend splunk --output detections/compiled/splunk/
+
+      - name: Compile KQL
+        run: python scripts/compile_detections.py detections/yaml/ --backend sentinel --output detections/compiled/sentinel/
+
+      - name: Compile EQL
+        run: python scripts/compile_detections.py detections/yaml/ --backend elastic --output detections/compiled/elastic/
+
+      - name: Run detection tests
+        run: python scripts/test_detections.py detections/tests/
+
+      - name: ATT&CK coverage diff
+        run: python scripts/mitre_coverage.py detections/yaml/ --diff
+
+      - name: Check regression
+        run: python scripts/regression_check.py detections/yaml/
+
+  deploy:
+    needs: validate-and-compile
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Deploy to Splunk
+        env:
+          SPLUNK_HOST: ${{ secrets.SPLUNK_HOST }}
+          SPLUNK_TOKEN: ${{ secrets.SPLUNK_TOKEN }}
+        run: |
+          python scripts/deploy_detections.py \
+            --backend splunk \
+            --rules-dir detections/compiled/splunk/ \
+            --splunk-host $SPLUNK_HOST \
+            --splunk-token $SPLUNK_TOKEN
+
+      - name: Update coverage report
+        run: python scripts/mitre_coverage.py detections/yaml/ --output docs/coverage-report.md
