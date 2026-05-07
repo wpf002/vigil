@@ -162,7 +162,25 @@ export function AttackDetail() {
         </div>
       </header>
 
-      <PhaseTimeline phases={attack.phases} currentPhase={attack.current_phase} />
+      <PhaseTimeline
+        phases={attack.phases}
+        currentPhase={attack.current_phase}
+        predictedNextPhase={attack.predicted_next_phase ?? null}
+      />
+
+      {attack.analyst_summary && (
+        <section
+          className="vigil-card p-4 border-l-2 border-l-accent bg-accent/5"
+          aria-label="Analyst summary"
+        >
+          <div className="text-[10px] uppercase tracking-[0.18em] text-accent-hover font-mono mb-1">
+            Analyst summary
+          </div>
+          <div className="text-sm font-mono text-fg whitespace-pre-wrap">
+            {attack.analyst_summary}
+          </div>
+        </section>
+      )}
 
       <section>
         <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-faint font-mono mb-2">
@@ -172,10 +190,7 @@ export function AttackDetail() {
           {attack.narrative ? (
             attack.narrative
           ) : (
-            <span className="text-fg-muted italic">
-              Narrative generation pending. Once the AI engine is wired in, it will
-              produce a plain-language summary of this attack here.
-            </span>
+            <NarrativeSkeleton />
           )}
           {attack.predicted_next_phase && (
             <div className="mt-3 text-xs text-fg-muted">
@@ -204,6 +219,19 @@ export function AttackDetail() {
         </h2>
         <EvidenceList evidence={attack.evidence} />
       </section>
+    </div>
+  );
+}
+
+function NarrativeSkeleton() {
+  return (
+    <div className="space-y-2 animate-pulse-soft">
+      <div className="h-3 bg-surface-2 rounded w-3/4" />
+      <div className="h-3 bg-surface-2 rounded w-5/6" />
+      <div className="h-3 bg-surface-2 rounded w-2/3" />
+      <div className="text-xs text-fg-muted italic mt-3">
+        Generating narrative…
+      </div>
     </div>
   );
 }

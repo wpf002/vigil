@@ -1,6 +1,15 @@
-import { NavLink } from "react-router-dom";
-import { ShieldAlert, ScrollText, Radar, Settings, Activity } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
+import {
+  ShieldAlert,
+  ScrollText,
+  Radar,
+  Settings,
+  Activity,
+  LogOut,
+} from "lucide-react";
 import type { ReactNode } from "react";
+import { useAuthStore } from "@/store/authStore";
+import { logout as apiLogout } from "@/api/auth";
 
 interface NavItem {
   to: string;
@@ -27,6 +36,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
 }
 
 function Sidebar() {
+  const navigate = useNavigate();
+  const user = useAuthStore((s) => s.user);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const clear = useAuthStore((s) => s.clear);
+
+  async function handleLogout() {
+    const refresh = useAuthStore.getState().getRefreshToken();
+    try {
+      if (accessToken && refresh) await apiLogout(accessToken, refresh);
+    } catch {
+      // Logout API failure is non-fatal — clear local state regardless.
+    }
+    clear();
+    navigate("/login", { replace: true });
+  }
+
   return (
     <aside className="w-52 shrink-0 border-r border-border bg-surface flex flex-col">
       <div className="h-12 px-4 flex items-center gap-2 border-b border-border">
@@ -41,6 +66,24 @@ function Sidebar() {
           <NavItemLink key={item.to} item={item} />
         ))}
       </nav>
+
+      <div className="border-t border-border p-3 space-y-2">
+        {user && (
+          <div className="text-[11px] font-mono text-fg-muted truncate">
+            <div className="text-fg truncate" title={user.email}>{user.email}</div>
+            <div className="text-fg-faint">{user.role}</div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="w-full flex items-center gap-2 px-2 py-1.5 text-[12px] font-mono
+                     text-fg-muted hover:text-fg hover:bg-surface-2 rounded-sm transition-colors"
+        >
+          <LogOut size={13} />
+          <span>Sign out</span>
+        </button>
+      </div>
     </aside>
   );
 }

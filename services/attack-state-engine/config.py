@@ -28,6 +28,13 @@ class AttackStateConfig(BaseSettings):
     jwt_audience: Optional[str] = None
     jwt_issuer: Optional[str] = None
 
+    # Shared with services/api. MUST be the same value across both services.
+    auth_secret: str = "dev-only-secret-change-me"
+    environment: str = "production"
+
+    # Internal service-to-service key (e.g. ai-engine PATCHing narratives).
+    internal_api_key: str = "dev-internal-key-change-me"
+
 
 _config: Optional[AttackStateConfig] = None
 

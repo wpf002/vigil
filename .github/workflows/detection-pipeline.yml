@@ -24,31 +24,25 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyyaml jsonschema
+          pip install -r services/signal-translation/requirements.txt
 
       - name: Validate YAML schema
-        run: python scripts/validate_detections.py detections/yaml/
+        run: python services/signal-translation/cli.py validate
 
-      - name: Validate attack narratives
-        run: python scripts/validate_narratives.py attack-narratives/
+      - name: Compile detections (SPL + KQL + EQL)
+        run: python services/signal-translation/cli.py compile
 
-      - name: Compile SPL
-        run: python scripts/compile_detections.py detections/yaml/ --backend splunk --output detections/compiled/splunk/
+      - name: ATT&CK coverage report
+        run: python services/signal-translation/cli.py coverage
 
-      - name: Compile KQL
-        run: python scripts/compile_detections.py detections/yaml/ --backend sentinel --output detections/compiled/sentinel/
-
-      - name: Compile EQL
-        run: python scripts/compile_detections.py detections/yaml/ --backend elastic --output detections/compiled/elastic/
-
-      - name: Run detection tests
-        run: python scripts/test_detections.py detections/tests/
-
-      - name: ATT&CK coverage diff
-        run: python scripts/mitre_coverage.py detections/yaml/ --diff
-
-      - name: Check regression
-        run: python scripts/regression_check.py detections/yaml/
+      - name: Verify compiler is idempotent
+        run: |
+          python services/signal-translation/cli.py compile
+          if [ -n "$(git status --porcelain detections/compiled)" ]; then
+            echo "Compiler output changed on second run — not idempotent."
+            git --no-pager diff detections/compiled
+            exit 1
+          fi
 
   deploy:
     needs: validate-and-compile

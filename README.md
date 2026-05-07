@@ -161,14 +161,15 @@ uvicorn main:app --reload --port 8001
 | Service | Status |
 |---|---|
 | `ingestor` | ✅ Complete — Splunk ES + Core connectors, CDM, Kafka producer, 20 tests |
-| `attack-state-engine` | 🔲 Next |
-| `correlation-engine` | 🔲 Pending |
-| `signal-translation` | 🔲 Pending |
+| `attack-state-engine` | ✅ Complete — AttackState persistence, JWT auth, narrative PATCH, 28 tests |
+| `correlation-engine` | ✅ Complete — Kafka consumer, entity index, manifest-driven registry, 12 tests |
+| `api` | ✅ Complete — Custom JWT auth (HS256 + bcrypt + refresh rotation), tenants, RBAC, 16 tests |
+| `signal-translation` | ✅ Complete — YAML compiler, field normalization, ATT&CK coverage, 12 tests |
+| `ai-engine` | ✅ Complete — Claude narrative generator, prompt caching, Redis cache, 11 tests |
+| `frontend` | ✅ Complete — Auth flows, AttackList/AttackDetail, narrative UI |
 | `detection-engine` | 🔲 Pending |
-| `ai-engine` | 🔲 Pending |
 | `playbook-engine` | 🔲 Pending |
 | `analyst-portal` | 🔲 Pending |
-| `frontend` | 🔲 Pending |
 
 ---
 

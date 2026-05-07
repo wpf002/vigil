@@ -67,6 +67,47 @@ services:
       - POSTGRES_PWD=changeme
       - POSTGRES_SEEDS=postgres
 
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./services/api/.env.example
+    environment:
+      - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
+    ports:
+      - "8000:8000"
+
+  signal-translation:
+    build:
+      context: .
+      dockerfile: ./services/signal-translation/Dockerfile
+    env_file:
+      - ./services/signal-translation/.env.example
+    ports:
+      - "8004:8004"
+    volumes:
+      - ./detections:/app/detections
+
+  ai-engine:
+    build:
+      context: ./services/ai-engine
+      dockerfile: Dockerfile
+    depends_on:
+      - kafka
+      - redis
+    env_file:
+      - ./services/ai-engine/.env.example
+    environment:
+      - REDIS_URL=redis://redis:6379/1
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+    ports:
+      - "8006:8006"
+
 volumes:
   postgres_data:
   redis_data:

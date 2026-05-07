@@ -185,6 +185,15 @@ class AttackStateStore:
             row = await conn.fetchrow(sql, attack_id, tenant_id)
         return _deserialize_state(row["state"]) if row else None
 
+    async def get_by_id_internal(self, attack_id: UUID) -> Optional[AttackState]:
+        """Tenant-agnostic lookup. Use only for internal service callers
+        (e.g. the AI engine PATCHing narratives) — never expose to user JWTs.
+        """
+        sql = "SELECT state FROM attack_states WHERE attack_id = $1"
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(sql, attack_id)
+        return _deserialize_state(row["state"]) if row else None
+
     async def get_active_by_tenant(
         self, tenant_id: str, limit: int = 50, offset: int = 0
     ) -> list[AttackState]:

@@ -309,7 +309,12 @@ def main() -> None:
 
     producer.flush()
     producer.close(timeout=5)
-    print(f"published {total} events. Watch the correlation engine logs and refresh the UI.")
+    print(f"published {total} events. Waiting 3s for the AI engine to generate narratives…")
+    # Give the AI engine a head start so the analyst sees populated narratives
+    # the first time they refresh — the consumer pipeline is async so without
+    # this pause the UI flickers between "Generating…" and the final text.
+    time.sleep(3)
+    print("done. Watch the correlation engine logs and refresh the UI.")
 
 
 if __name__ == "__main__":

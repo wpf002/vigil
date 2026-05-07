@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { phaseLabel } from "@/lib/format";
 import { PHASE_ORDER } from "@/types/attacks";
 import type { MITRETactic, PhaseState } from "@/types/attacks";
@@ -6,9 +6,10 @@ import type { MITRETactic, PhaseState } from "@/types/attacks";
 interface Props {
   phases: PhaseState[];
   currentPhase: MITRETactic;
+  predictedNextPhase?: MITRETactic | null;
 }
 
-export function PhaseTimeline({ phases, currentPhase }: Props) {
+export function PhaseTimeline({ phases, currentPhase, predictedNextPhase }: Props) {
   const phaseMap = new Map(phases.map((p) => [p.phase, p]));
   // Skip the rare reconnaissance/resource-development phases — too long to render.
   const visible = PHASE_ORDER.slice(2);
@@ -24,12 +25,16 @@ export function PhaseTimeline({ phases, currentPhase }: Props) {
           const isCurrent = phase === currentPhase;
           const isObserved = ps?.status === "Observed";
           const isConfirmed = ps?.status === "Confirmed";
+          const isPredicted = phase === predictedNextPhase;
 
           let cls = "border-border bg-surface-2 text-fg-faint";
           if (isConfirmed) cls = "border-accent/60 bg-accent/15 text-accent-hover";
           else if (isObserved)
             cls = "border-warning/40 bg-warning/10 text-warning";
           if (isCurrent) cls += " ring-1 ring-accent";
+          if (isPredicted && !isCurrent && !isConfirmed && !isObserved) {
+            cls = "border-indigo-500/60 bg-indigo-500/10 text-indigo-400 border-dashed";
+          }
 
           return (
             <li
@@ -38,7 +43,9 @@ export function PhaseTimeline({ phases, currentPhase }: Props) {
               title={
                 ps
                   ? `${ps.status} — ${pct(ps.confidence)}`
-                  : "Not observed"
+                  : isPredicted
+                    ? "AI-predicted next phase"
+                    : "Not observed"
               }
             >
               <div className="flex items-center justify-between">
@@ -46,9 +53,12 @@ export function PhaseTimeline({ phases, currentPhase }: Props) {
                   {phaseLabel(phase)}
                 </span>
                 {isConfirmed && <Check size={11} />}
+                {isPredicted && !isCurrent && !isConfirmed && !isObserved && (
+                  <ChevronRight size={11} />
+                )}
               </div>
               <div className="font-mono text-[9px] opacity-70">
-                {ps ? ps.status : "—"}
+                {ps ? ps.status : isPredicted ? "Predicted" : "—"}
               </div>
             </li>
           );

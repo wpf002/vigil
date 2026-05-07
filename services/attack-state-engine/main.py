@@ -13,7 +13,7 @@ from uuid import UUID
 
 import structlog
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -54,6 +54,14 @@ def err(message: str, code: int = 400) -> JSONResponse:
 class StatusUpdate(BaseModel):
     status: AttackStateStatus
     analyst_note: Optional[str] = None
+
+
+class NarrativeUpdate(BaseModel):
+    """Body of PATCH /attacks/{id}/narrative — populated by the AI engine."""
+    narrative: Optional[str] = None
+    predicted_next_phase: Optional[MITRETactic] = None
+    analyst_summary: Optional[str] = None
+    confidence_note: Optional[str] = None
 
 
 # ── lifespan ──────────────────────────────────────────────────────────────────
@@ -208,6 +216,51 @@ async def update_status(
         state.analyst_summary = f"{existing}\n{suffix}".strip()
 
     await store.update(state)
+    return ok(state.model_dump(mode="json"))
+
+
+@app.patch("/attacks/{attack_id}/narrative")
+async def update_narrative(
+    attack_id: UUID,
+    body: NarrativeUpdate,
+    x_internal_key: Optional[str] = Header(None, alias="X-Internal-Key"),
+    store: AttackStateStore = Depends(get_store),
+):
+    """Internal-only. Called by the AI engine to populate narrative fields.
+
+    Auth: a single shared INTERNAL_API_KEY. The AI engine is the only
+    authorized writer; user JWTs cannot reach this endpoint.
+    """
+    cfg = get_config()
+    if not x_internal_key or x_internal_key != cfg.internal_api_key:
+        raise HTTPException(status_code=401, detail="Invalid internal key")
+
+    state = await store.get_by_id_internal(attack_id)
+    if state is None:
+        return err("Attack not found", code=404)
+
+    changed = False
+    if body.narrative is not None:
+        state.narrative = body.narrative
+        changed = True
+    if body.predicted_next_phase is not None:
+        state.predicted_next_phase = body.predicted_next_phase
+        changed = True
+    if body.analyst_summary is not None:
+        state.analyst_summary = body.analyst_summary
+        changed = True
+    if body.confidence_note is not None:
+        # Append confidence note to analyst_summary so the analyst sees it
+        # without losing previously written content.
+        prefix = state.analyst_summary or ""
+        sep = "\n" if prefix else ""
+        state.analyst_summary = f"{prefix}{sep}[confidence note] {body.confidence_note}"
+        changed = True
+
+    if changed:
+        state.last_updated = datetime.now(timezone.utc)
+        await store.update(state)
+
     return ok(state.model_dump(mode="json"))
 
 

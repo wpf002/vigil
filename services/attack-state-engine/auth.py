@@ -1,62 +1,76 @@
-"""
-JWT authentication stub.
+"""JWT verification for the attack-state-engine.
 
-TODO: replace with real Clerk JWKS verification (use PyJWT + JWKS fetch).
-For now this decodes the token unverified, extracts `sub` and `azp`,
-and uses `sub` as tenant_id. Anyone with a forged token can call the API,
-so do not deploy this stub to production.
+Uses the same HS256 secret as services/api so a single token is valid across
+both services. Dev-only X-Tenant-Id bypass remains, gated on
+ENVIRONMENT=development.
 """
 
 from __future__ import annotations
-import base64
-import json
+import os
 from dataclasses import dataclass
 from typing import Optional
 
+import jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from .config import get_config
+
 bearer_scheme = HTTPBearer(auto_error=False)
+JWT_ALGORITHM = "HS256"
 
 
 @dataclass
 class TenantPrincipal:
     tenant_id: str
     user_id: str
-    azp: Optional[str] = None
+    role: str = "analyst"
+    email: Optional[str] = None
 
 
-def _decode_jwt_unverified(token: str) -> dict:
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Malformed JWT")
-    payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
-    return json.loads(base64.urlsafe_b64decode(payload_b64))
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail={"error": "Unauthorized", "detail": detail},
+    )
 
 
 async def get_principal(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> TenantPrincipal:
-    # Dev mode: allow X-Tenant-Id header without a token.
-    dev_tenant = request.headers.get("X-Tenant-Id")
-    if credentials is None and dev_tenant:
-        return TenantPrincipal(tenant_id=dev_tenant, user_id=dev_tenant)
+    cfg = get_config()
+    environment = (os.getenv("ENVIRONMENT") or cfg.environment or "production").lower()
+
+    # Dev-only bypass.
+    if credentials is None and environment == "development":
+        dev_tenant = request.headers.get("X-Tenant-Id")
+        if dev_tenant:
+            return TenantPrincipal(tenant_id=dev_tenant, user_id=dev_tenant, role="admin")
 
     if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        raise _unauthorized("Missing bearer token")
 
     try:
-        claims = _decode_jwt_unverified(credentials.credentials)
-    except Exception:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid JWT")
+        payload = jwt.decode(
+            credentials.credentials,
+            cfg.auth_secret,
+            algorithms=[JWT_ALGORITHM],
+        )
+    except jwt.ExpiredSignatureError:
+        raise _unauthorized("Token expired")
+    except jwt.InvalidTokenError:
+        raise _unauthorized("Invalid token")
 
-    sub = claims.get("sub")
-    if not sub:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="JWT missing sub claim")
+    tenant_id = payload.get("tenant_id")
+    user_id = payload.get("sub")
+    if not tenant_id or not user_id:
+        raise _unauthorized("Token missing tenant_id or sub")
 
-    return TenantPrincipal(
-        tenant_id=str(sub),
-        user_id=str(sub),
-        azp=claims.get("azp"),
+    request.state.principal = TenantPrincipal(
+        tenant_id=str(tenant_id),
+        user_id=str(user_id),
+        role=str(payload.get("role", "analyst")),
+        email=payload.get("email"),
     )
+    return request.state.principal

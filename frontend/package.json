@@ -18,8 +18,7 @@
     "zustand": "^4.5.4",
     "date-fns": "^3.6.0",
     "recharts": "^2.12.7",
-    "lucide-react": "^0.400.0",
-    "@clerk/clerk-react": "^5.2.0"
+    "lucide-react": "^0.400.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",
