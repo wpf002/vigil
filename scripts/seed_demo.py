@@ -48,9 +48,14 @@ from ingestor.models.cdm import (  # noqa: E402
 )
 
 
-BOOTSTRAP = "localhost:9092"
-TOPIC = "vigil.signals.raw"
-TENANT = "default"
+import os
+
+BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+TOPIC = os.getenv("KAFKA_TOPIC_SIGNALS", "vigil.signals.raw")
+# Override with TENANT_ID=<uuid> when seeding for a registered user — the
+# correlation engine writes AttackStates under whatever tenant_id the
+# CDMEvent carries, and the API only returns rows matching the JWT tenant.
+TENANT = os.getenv("TENANT_ID", "default")
 
 
 def now_minus(minutes: float) -> datetime:

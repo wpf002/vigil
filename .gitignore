@@ -33,3 +33,6 @@ secrets/
 
 # Generated detection artifacts — never commit compiled output
 detections/compiled/
+
+# Runtime service logs
+logs/

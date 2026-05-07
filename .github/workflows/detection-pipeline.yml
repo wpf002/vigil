@@ -44,28 +44,5 @@ jobs:
             exit 1
           fi
 
-  deploy:
-    needs: validate-and-compile
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Deploy to Splunk
-        env:
-          SPLUNK_HOST: ${{ secrets.SPLUNK_HOST }}
-          SPLUNK_TOKEN: ${{ secrets.SPLUNK_TOKEN }}
-        run: |
-          python scripts/deploy_detections.py \
-            --backend splunk \
-            --rules-dir detections/compiled/splunk/ \
-            --splunk-host $SPLUNK_HOST \
-            --splunk-token $SPLUNK_TOKEN
-
-      - name: Update coverage report
-        run: python scripts/mitre_coverage.py detections/yaml/ --output docs/coverage-report.md
+  # Deployment job intentionally omitted until scripts/deploy_detections.py
+  # exists and the Splunk delivery target is provisioned. Re-add then.

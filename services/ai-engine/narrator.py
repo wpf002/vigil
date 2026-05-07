@@ -176,17 +176,18 @@ class Narrator:
 
     def generate(self, state: dict[str, Any]) -> NarrativeResult:
         """Synchronous call (Anthropic Python SDK is sync). Caller may
-        offload to a thread pool if it needs concurrency."""
+        offload to a thread pool if it needs concurrency.
+
+        ``effort: "low"`` matches Anthropic's recommended starting point for
+        content generation on Sonnet 4.6+ — terser preambles, fewer redundant
+        clauses, similar quality at a fraction of the output tokens. Bump to
+        ``"medium"`` if narrative quality regresses.
+        """
         message = self._client.messages.create(
             model=self._model,
             max_tokens=1024,
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
+            output_config={"effort": "low"},
+            system=SYSTEM_PROMPT,
             messages=[{"role": "user", "content": _build_user_message(state)}],
         )
         text = _extract_text(message)

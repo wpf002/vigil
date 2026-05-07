@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 from typing import Optional
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,14 +18,13 @@ class APIConfig(BaseSettings):
     access_token_ttl_minutes: int = 60
     refresh_token_ttl_days: int = 30
 
-    cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Stored as a comma-separated string so pydantic-settings doesn't try to
+    # JSON-decode the env value. Read through the cors_origins property.
+    cors_allow_origins: str = "http://localhost:5173,http://localhost:3000"
 
-    @field_validator("cors_allow_origins", mode="before")
-    @classmethod
-    def split_origins(cls, v):
-        if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
-        return v
+    @property
+    def cors_origins(self) -> list[str]:
+        return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]
 
 
 _config: Optional[APIConfig] = None

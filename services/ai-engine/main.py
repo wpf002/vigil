@@ -100,32 +100,6 @@ def create_app() -> FastAPI:
             "errors": _engine.consumer.errors if _engine.consumer else 0,
         }
 
-    @app.post("/generate/{attack_id}")
-    async def generate_for(attack_id: str):
-        """Manual trigger. Fetches the AttackState by ID, generates narrative,
-        PATCHes back. Useful for replays and demos."""
-        if _engine is None or _engine.narrator is None:
-            raise HTTPException(status_code=503, detail="Engine not ready")
-
-        cfg = _engine.config
-        async with httpx.AsyncClient(timeout=15.0) as http:
-            try:
-                # No tenant filter — internal call. We ride on INTERNAL_API_KEY
-                # for the PATCH; the GET still requires a JWT. Since we don't
-                # have one here, the PATCH endpoint accepts internal-keyed
-                # callers but the GET does not. As a manual trigger, we accept
-                # the body posted by the caller in a follow-up version; for
-                # now require the caller to also provide the AttackState shape.
-                pass
-            except httpx.HTTPError as e:
-                raise HTTPException(status_code=502, detail=str(e))
-
-        raise HTTPException(
-            status_code=501,
-            detail="Manual generate currently requires the consumer pipeline. "
-                   "POST AttackState payloads via /generate (body) instead.",
-        )
-
     @app.post("/generate")
     async def generate_with_body(body: dict):
         """Manual trigger taking the AttackState as the body. Used by the demo

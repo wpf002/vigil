@@ -130,26 +130,24 @@ def test_narrator_returns_parsed_result():
         "analyst_summary": "Isolate the host now.",
         "confidence_note": None,
     }))
-    narrator = Narrator(client=client, model="claude-sonnet-4-20250514")
+    narrator = Narrator(client=client, model="claude-sonnet-4-6")
     result = narrator.generate(_state(confidence=0.65))
     assert isinstance(result, NarrativeResult)
     assert result.predicted_next_phase == "lateral-movement"
 
 
-def test_narrator_uses_prompt_caching_on_system():
+def test_narrator_request_shape():
+    """Lock down the request shape: system prompt + low-effort tuning."""
     client = _mock_client_returning(json.dumps({
         "narrative": "x", "predicted_next_phase": None,
         "analyst_summary": "y", "confidence_note": None,
     }))
-    narrator = Narrator(client=client, model="claude-sonnet-4-20250514")
+    narrator = Narrator(client=client, model="claude-sonnet-4-6")
     narrator.generate(_state())
 
-    call_kwargs = client.messages.create.call_args.kwargs
-    system = call_kwargs["system"]
-    assert isinstance(system, list)
-    assert system[0]["type"] == "text"
-    assert system[0]["cache_control"] == {"type": "ephemeral"}
-    assert system[0]["text"] == SYSTEM_PROMPT
+    kwargs = client.messages.create.call_args.kwargs
+    assert kwargs["system"] == SYSTEM_PROMPT
+    assert kwargs["output_config"] == {"effort": "low"}
 
 
 def test_narrator_truncates_evidence_to_20():
@@ -158,7 +156,7 @@ def test_narrator_truncates_evidence_to_20():
         "narrative": "x", "predicted_next_phase": None,
         "analyst_summary": "y", "confidence_note": None,
     }))
-    narrator = Narrator(client=client, model="claude-sonnet-4-20250514")
+    narrator = Narrator(client=client, model="claude-sonnet-4-6")
 
     state = _state()
     state["evidence"] = [
@@ -181,7 +179,7 @@ def test_narrator_truncates_evidence_to_20():
 def test_narrator_propagates_api_error():
     client = MagicMock()
     client.messages.create.side_effect = RuntimeError("503 Service Unavailable")
-    narrator = Narrator(client=client, model="claude-sonnet-4-20250514")
+    narrator = Narrator(client=client, model="claude-sonnet-4-6")
     with pytest.raises(RuntimeError):
         narrator.generate(_state())
 
