@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { authClient as apiClient } from "./auth";
 
 export type SIEMType = "splunk_es" | "splunk_core" | "sentinel" | "elastic";
 

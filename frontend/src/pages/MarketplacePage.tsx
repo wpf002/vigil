@@ -43,7 +43,7 @@ export function MarketplacePage() {
 
   const importMut = useMutation({
     mutationFn: (id: string) => importListing(id),
-    onSuccess: (_, id) => {
+    onSuccess: () => {
       setToast("Detection imported to your library.");
       qc.invalidateQueries({ queryKey: ["marketplace"] });
       qc.invalidateQueries({ queryKey: ["detections"] });
@@ -57,18 +57,17 @@ export function MarketplacePage() {
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto">
-      <div className="mb-5 flex items-center gap-2">
-        <Store size={18} className="text-fg-muted" />
-        <h1 className="text-xl font-mono text-fg">Detection Marketplace</h1>
-        <span className="ml-auto text-[11px] font-mono text-fg-faint tabular-nums">
-          {listings.data?.length ?? 0} active listings
-        </span>
+      <div className="mb-5 flex items-center gap-2 flex-wrap">
+        <Store size={18} className="text-fg-muted shrink-0" />
+        <h1 className="text-xl font-mono text-fg whitespace-nowrap">
+          Detection Marketplace
+        </h1>
         {isAdmin && (
           <button
             onClick={() => setShowPublish(true)}
-            className="ml-3 px-3 py-1.5 text-[12px] font-mono border border-accent/40 bg-accent/10 text-accent rounded-sm hover:bg-accent/20"
+            className="ml-auto px-3 py-1.5 text-[12px] font-mono border border-accent/40 bg-accent/10 text-accent rounded-sm hover:bg-accent/20 whitespace-nowrap shrink-0"
           >
-            Publish detection
+            Publish Detection
           </button>
         )}
       </div>

@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { refresh } from "./auth";
+import { extractErrorMessage } from "./client";
 import { useAuthStore } from "@/store/authStore";
 import type {
   CoverageReport,
@@ -68,9 +69,7 @@ detectionClient.interceptors.response.use(
         return detectionClient(original);
       }
     }
-    const data = err.response?.data as { error?: string; detail?: string } | undefined;
-    if (data?.error) err.message = data.error;
-    else if (data?.detail) err.message = data.detail;
+    err.message = extractErrorMessage(err.response?.data) ?? err.message;
     return Promise.reject(err);
   },
 );

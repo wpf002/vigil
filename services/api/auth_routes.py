@@ -441,6 +441,7 @@ class APIKeyResponse(BaseModel):
     expires_at: Optional[datetime]
     revoked: bool
     created_at: datetime
+    use_count: int = 0
 
 
 @router.post("/api-keys", response_model=APIKeyCreatedResponse)
@@ -490,6 +491,7 @@ async def list_api_keys_route(
             key_id=r.key_id, name=r.name, key_prefix=r.key_prefix,
             scopes=r.scopes, last_used_at=r.last_used_at,
             expires_at=r.expires_at, revoked=r.revoked, created_at=r.created_at,
+            use_count=r.use_count,
         )
         for r in rows
     ]

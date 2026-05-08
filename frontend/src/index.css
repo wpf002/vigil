@@ -29,6 +29,31 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #404040;
   }
+
+  /* Force the native date / time picker chrome onto the dark theme.
+     Safari/Chrome respect color-scheme; the picker icon needs an
+     invert to be visible against #1a1a1a. */
+  input[type="date"],
+  input[type="time"],
+  input[type="datetime-local"],
+  input[type="month"],
+  input[type="week"] {
+    color-scheme: dark;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator,
+  input[type="time"]::-webkit-calendar-picker-indicator,
+  input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+    filter: invert(0.6);
+    cursor: pointer;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator:hover,
+  input[type="time"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
 }
 
 @layer components {

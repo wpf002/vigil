@@ -30,8 +30,8 @@ const NAV: NavItem[] = [
   { to: "/marketplace", label: "Marketplace", icon: Store, active: true },
   { to: "/playbooks", label: "Playbooks", icon: ListChecks, active: true },
   { to: "/compliance", label: "Compliance", icon: FileCheck, active: true },
-  { to: "/health", label: "Pipeline", icon: Activity },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/pipeline", label: "Pipeline", icon: Activity, active: true },
+  { to: "/settings/api-keys", label: "Settings", icon: Settings, active: true },
 ];
 
 export function AppLayout({ children }: { children: ReactNode }) {
@@ -79,7 +79,9 @@ function Sidebar() {
         {user && (
           <div className="text-[11px] font-mono text-fg-muted truncate">
             <div className="text-fg truncate" title={user.email}>{user.email}</div>
-            <div className="text-fg-faint">{user.role}</div>
+            <div className="text-fg-faint">
+              {user.role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            </div>
           </div>
         )}
         <button
@@ -89,7 +91,7 @@ function Sidebar() {
                      text-fg-muted hover:text-fg hover:bg-surface-2 rounded-sm transition-colors"
         >
           <LogOut size={13} />
-          <span>Sign out</span>
+          <span>Sign Out</span>
         </button>
       </div>
     </aside>

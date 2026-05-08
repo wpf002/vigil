@@ -78,28 +78,96 @@ class Aggregator:
     async def trend(
         self, tenant_id: UUID, *, days: int = 30, jwt: Optional[str] = None
     ) -> dict[str, Any]:
+        """Build per-day series from raw attack data.
+
+        attack-state-engine doesn't expose a trend endpoint, so we pull all
+        attacks in the window and bucket them locally. Each chart-friendly
+        series has a uniform `{date, count|value}` shape so the FE can render
+        them with a single dataKey.
+        """
         out: dict[str, Any] = {
             "days": days,
             "attack_volume": [],
             "mttr_seconds": [],
             "sla_breach_rate": [],
         }
+        attacks: list[dict[str, Any]] = []
         async with self._client_factory() as client:
             try:
                 resp = await client.get(
-                    f"{self.attack_state_engine_url}/attacks/trend",
-                    params={"days": days},
+                    f"{self.attack_state_engine_url}/attacks",
+                    params={"limit": 200},
                     headers=self._headers(str(tenant_id), jwt),
                 )
                 if resp.status_code < 400:
                     body = resp.json()
-                    inner = body.get("data") if isinstance(body, dict) and "data" in body else body
-                    if isinstance(inner, dict):
-                        out["attack_volume"] = inner.get("attack_volume") or []
-                        out["mttr_seconds"] = inner.get("mttr_seconds") or []
-                        out["sla_breach_rate"] = inner.get("sla_breach_rate") or []
+                    raw = body.get("data") if isinstance(body, dict) and "data" in body else body
+                    if isinstance(raw, list):
+                        attacks = raw
             except Exception as e:
                 logger.warning("reporting.trend.attack_state_unreachable", error=str(e))
+
+        # Build day buckets (UTC) for the trailing window.
+        end = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        days_axis = [end - timedelta(days=i) for i in range(days - 1, -1, -1)]
+        volume: dict[str, int] = {d.date().isoformat(): 0 for d in days_axis}
+        mttrs_per_day: dict[str, list[float]] = {d.date().isoformat(): [] for d in days_axis}
+        breaches_per_day: dict[str, list[float]] = {d.date().isoformat(): [] for d in days_axis}
+
+        sla_seconds = 4 * 3600  # 4 hours from open → first response considered breach.
+
+        now = datetime.now(timezone.utc)
+        for a in attacks:
+            opened = _parse_iso(a.get("opened_at") or a.get("first_seen") or a.get("created_at"))
+            if opened is None:
+                continue
+            day_key = opened.astimezone(timezone.utc).date().isoformat()
+            if day_key in volume:
+                volume[day_key] += 1
+
+            status = (a.get("status") or "").lower()
+            resolved_raw = a.get("resolved_at") or a.get("closed_at")
+            if not resolved_raw and status in {"resolved", "contained", "closed"}:
+                resolved_raw = a.get("last_updated") or a.get("last_seen")
+            resolved = _parse_iso(resolved_raw) if resolved_raw else None
+
+            if resolved is not None and day_key in mttrs_per_day:
+                mttrs_per_day[day_key].append((resolved - opened).total_seconds())
+
+            # SLA breach for high-confidence attacks: scope to the open day.
+            if (a.get("confidence") or 0) >= 0.7 and day_key in breaches_per_day:
+                if resolved:
+                    breach = (resolved - opened).total_seconds() > sla_seconds
+                    breaches_per_day[day_key].append(1.0 if breach else 0.0)
+                else:
+                    age = (now - opened).total_seconds()
+                    breaches_per_day[day_key].append(1.0 if age > sla_seconds else 0.0)
+
+        out["attack_volume"] = [
+            {"date": d.date().strftime("%m/%d"), "count": volume[d.date().isoformat()]}
+            for d in days_axis
+        ]
+        out["mttr_seconds"] = [
+            {
+                "date": d.date().strftime("%m/%d"),
+                "value": round(sum(mttrs_per_day[d.date().isoformat()]) / len(mttrs_per_day[d.date().isoformat()]), 2)
+                if mttrs_per_day[d.date().isoformat()]
+                else 0,
+            }
+            for d in days_axis
+        ]
+        out["sla_breach_rate"] = [
+            {
+                "date": d.date().strftime("%m/%d"),
+                "value": round(
+                    sum(breaches_per_day[d.date().isoformat()]) / len(breaches_per_day[d.date().isoformat()]),
+                    4,
+                )
+                if breaches_per_day[d.date().isoformat()]
+                else 0,
+            }
+            for d in days_axis
+        ]
         return out
 
     # ── upstream collectors ───────────────────────────────────────────────
@@ -108,7 +176,7 @@ class Aggregator:
         try:
             resp = await client.get(
                 f"{self.attack_state_engine_url}/attacks",
-                params={"limit": 500},
+                params={"limit": 200, "status": "all"},
                 headers=self._headers(tenant_id, jwt),
             )
             if resp.status_code >= 400:
@@ -122,29 +190,48 @@ class Aggregator:
             active = 0
             resolved_7d = 0
             mttrs: list[float] = []
+            sla_breaches = 0
+            sla_total = 0
             phases: dict[str, int] = {}
             for a in attacks:
-                phase = (a.get("current_phase") or a.get("phase") or "unknown").lower()
-                phases[phase] = phases.get(phase, 0) + 1
                 status = (a.get("status") or "").lower()
-                if status not in {"resolved", "false_positive", "closed"}:
+                # Phase distribution: only currently-active attacks.
+                if status not in {"resolved", "false_positive", "closed", "contained"}:
+                    phase = (a.get("current_phase") or a.get("phase") or "unknown").lower()
+                    phases[phase] = phases.get(phase, 0) + 1
                     active += 1
-                resolved_at = a.get("resolved_at") or a.get("closed_at")
-                if resolved_at:
-                    try:
-                        dt = _parse_iso(resolved_at)
-                        if dt and dt >= since_7d:
-                            resolved_7d += 1
-                            opened = _parse_iso(a.get("opened_at") or a.get("created_at"))
-                            if opened:
-                                mttrs.append((dt - opened).total_seconds())
-                    except Exception:
-                        continue
+
+                opened = _parse_iso(
+                    a.get("opened_at") or a.get("created_at") or a.get("first_seen")
+                )
+                # Treat last_updated as the resolution timestamp once the
+                # attack has reached a terminal status.
+                resolved_at_raw = a.get("resolved_at") or a.get("closed_at")
+                if not resolved_at_raw and status in {"resolved", "contained", "closed"}:
+                    resolved_at_raw = a.get("last_updated") or a.get("last_seen")
+                resolved_at = _parse_iso(resolved_at_raw) if resolved_at_raw else None
+
+                if resolved_at and opened and resolved_at >= since_7d:
+                    resolved_7d += 1
+                    mttrs.append((resolved_at - opened).total_seconds())
+
+                # SLA breach: high-confidence (≥0.7) attack either took
+                # >4h to resolve or has been open >4h without resolution.
+                if opened and (a.get("confidence") or 0) >= 0.7:
+                    sla_total += 1
+                    if resolved_at:
+                        if (resolved_at - opened).total_seconds() > 4 * 3600:
+                            sla_breaches += 1
+                    elif (now - opened).total_seconds() > 4 * 3600:
+                        sla_breaches += 1
+
             out["active_attacks"] = active
             out["attacks_resolved_7d"] = resolved_7d
             out["attacks_by_phase"] = phases
             if mttrs:
                 out["mttr_seconds_7d"] = round(sum(mttrs) / len(mttrs), 2)
+            if sla_total > 0:
+                out["sla_breach_rate_7d"] = round(sla_breaches / sla_total, 4)
             if phases:
                 out["top_tactic"] = max(phases, key=phases.get)
         except Exception as e:

@@ -129,11 +129,16 @@ app = FastAPI(title="VIGIL Correlation Engine", version="0.1.0", lifespan=lifesp
 @app.get("/health")
 async def health():
     if engine is None:
-        return JSONResponse({"status": "starting"}, status_code=503)
+        return JSONResponse({"status": "starting", "service": "correlation-engine", "version": "0.1.0"}, status_code=503)
     s = engine.get_status()
     ok = s["running"] and s["kafka_consumer_connected"] and s["kafka_publisher_connected"]
     return JSONResponse(
-        {"status": "ok" if ok else "degraded", **s},
+        {
+            "status": "ok" if ok else "degraded",
+            "service": "correlation-engine",
+            "version": "0.1.0",
+            **s,
+        },
         status_code=200 if ok else 503,
     )
 

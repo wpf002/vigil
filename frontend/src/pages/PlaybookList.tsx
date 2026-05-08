@@ -142,8 +142,8 @@ function PlaybookRow({
         className="px-3 py-2 text-right"
         onClick={(e) => e.stopPropagation()}
       >
-        {run.status === "paused" && (
-          <div className="inline-flex gap-2">
+        {run.status === "paused" ? (
+          <div className="inline-flex gap-3 justify-end">
             <button
               type="button"
               onClick={onResume}
@@ -159,6 +159,16 @@ function PlaybookRow({
               <Square size={12} /> Abort
             </button>
           </div>
+        ) : run.status === "running" ? (
+          <button
+            type="button"
+            onClick={onAbort}
+            className="inline-flex items-center gap-1 text-[12px] font-mono text-fg-muted hover:text-accent"
+          >
+            <Square size={12} /> Abort
+          </button>
+        ) : (
+          <span className="text-[11px] font-mono text-fg-faint">—</span>
         )}
       </td>
     </tr>

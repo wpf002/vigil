@@ -81,11 +81,17 @@ async def run_worker(cfg: PlaybookEngineConfig) -> None:
             if client is not None:
                 break
 
+    # Skip the sandbox: our workflow imports from a runtime-registered
+    # package alias (`playbook_engine` in run.py) which the sandbox's
+    # fresh import context can't resolve. Activities are still isolated.
+    from temporalio.worker import UnsandboxedWorkflowRunner
+
     worker = Worker(
         client,
         task_queue=cfg.temporal_task_queue,
         workflows=[ResponseWorkflow],
         activities=ALL_ACTIVITIES,
+        workflow_runner=UnsandboxedWorkflowRunner(),
     )
     logger.info(
         "playbook_worker.started",

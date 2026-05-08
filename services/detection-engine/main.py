@@ -214,9 +214,12 @@ async def list_detections(
     rows = await store.list_active_detections(tenant, platform_tenant_id=platform)
     enriched = []
     for r in rows:
-        # Performance is keyed off the row's own tenant — could be platform.
-        row_tenant = r["tenant_id"]
-        perf = await store.latest_performance(r["detection_id"], row_tenant)
+        # Performance is recorded under the *consumer's* tenant — even when
+        # the detection version itself is platform-shared, the signals
+        # firing on it come from the customer's environment.
+        perf = await store.latest_performance(r["detection_id"], tenant)
+        if perf is None and r["tenant_id"] != tenant:
+            perf = await store.latest_performance(r["detection_id"], r["tenant_id"])
         enriched.append({**_serialize_version(r), "performance": _serialize_performance(perf)})
     return ok(enriched, count=len(enriched))
 
@@ -232,7 +235,9 @@ async def get_detection(
     active = await store.get_active_version(detection_id, tenant, platform_tenant_id=platform)
     if active is None:
         return err("Detection not found", code=404)
-    perf = await store.latest_performance(detection_id, active["tenant_id"])
+    perf = await store.latest_performance(detection_id, tenant)
+    if perf is None and active["tenant_id"] != tenant:
+        perf = await store.latest_performance(detection_id, active["tenant_id"])
     return ok({**_serialize_version(active), "performance": _serialize_performance(perf)})
 
 
@@ -261,10 +266,13 @@ async def get_detection_performance(
     if active is None:
         return err("Detection not found", code=404)
 
-    row_tenant = active["tenant_id"]
-    perf = await store.latest_performance(detection_id, row_tenant)
-    trend = await store.daily_fires_trend(detection_id, row_tenant, days=days)
-    signals = await store.list_signals_for(detection_id, row_tenant, limit=200)
+    # Use the consumer's tenant for fires + signals — that's where the
+    # detection actually fired in production.
+    perf = await store.latest_performance(detection_id, tenant)
+    if perf is None and active["tenant_id"] != tenant:
+        perf = await store.latest_performance(detection_id, active["tenant_id"])
+    trend = await store.daily_fires_trend(detection_id, tenant, days=days)
+    signals = await store.list_signals_for(detection_id, tenant, limit=200)
     return ok(
         {
             "detection_id": detection_id,

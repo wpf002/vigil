@@ -56,7 +56,8 @@ export function APIKeysPage() {
                 <th className="px-3 py-2">Name</th>
                 <th className="px-3 py-2">Prefix</th>
                 <th className="px-3 py-2">Scopes</th>
-                <th className="px-3 py-2">Last used</th>
+                <th className="px-3 py-2">Usage</th>
+                <th className="px-3 py-2">Last Used</th>
                 <th className="px-3 py-2">Expires</th>
                 <th className="px-3 py-2"></th>
               </tr>
@@ -78,6 +79,10 @@ export function APIKeysPage() {
                   <td className="px-3 py-2 text-fg-muted">{k.key_prefix}…</td>
                   <td className="px-3 py-2 text-fg-faint text-[11px]">
                     {k.scopes.join(", ") || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-fg tabular-nums">
+                    {(k.use_count ?? 0).toLocaleString()}
+                    <span className="text-fg-faint text-[11px] ml-1">req</span>
                   </td>
                   <td className="px-3 py-2 text-fg-faint">
                     {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "—"}

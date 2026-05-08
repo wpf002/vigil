@@ -47,10 +47,17 @@ services:
       - zookeeper
     ports:
       - "9092:9092"
+      - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      # Two listeners:
+      #  - PLAINTEXT (in-docker): producers/consumers in compose connect via "kafka:9092"
+      #  - PLAINTEXT_HOST: host-side processes connect via "localhost:29092"
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,PLAINTEXT_HOST://0.0.0.0:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
 
@@ -61,7 +68,7 @@ services:
     ports:
       - "7233:7233"
     environment:
-      - DB=postgresql
+      - DB=postgres12
       - DB_PORT=5432
       - POSTGRES_USER=vigil
       - POSTGRES_PWD=changeme
@@ -75,18 +82,38 @@ services:
       postgres:
         condition: service_healthy
     env_file:
-      - ./services/api/.env.example
+      - ./services/api/.env
     environment:
       - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
     ports:
       - "8000:8000"
+
+  ingestor:
+    build:
+      context: ./services/ingestor
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_started
+    env_file:
+      - ./services/ingestor/.env
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - REDIS_URL=redis://redis:6379/0
+      # Demo mode: synthesize CDM events on a fixed schedule. Real SIEM
+      # connectors take over when their credentials are configured.
+      - SIEM_MODE=${SIEM_MODE:-demo}
+      - TENANT_ID=${DEMO_TENANT_ID:-e3d48d7c-9ae0-4991-988d-b42d296fb60a}
+      - SPLUNK_POLL_INTERVAL_SECONDS=${SPLUNK_POLL_INTERVAL_SECONDS:-30}
+    ports:
+      - "8001:8001"
 
   signal-translation:
     build:
       context: .
       dockerfile: ./services/signal-translation/Dockerfile
     env_file:
-      - ./services/signal-translation/.env.example
+      - ./services/signal-translation/.env
     ports:
       - "8004:8004"
     volumes:
@@ -100,7 +127,7 @@ services:
       - kafka
       - redis
     env_file:
-      - ./services/ai-engine/.env.example
+      - ./services/ai-engine/.env
     environment:
       - REDIS_URL=redis://redis:6379/1
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -109,21 +136,24 @@ services:
       - "8006:8006"
 
   detection-engine:
+    # Build context is repo root so the Dockerfile can COPY detections/
+    # into the image at build time, sidestepping macOS Docker bind-mount
+    # races on first startup.
     build:
-      context: ./services/detection-engine
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./services/detection-engine/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
     env_file:
-      - ./services/detection-engine/.env.example
+      - ./services/detection-engine/.env
     environment:
       - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
       - SIGNAL_TRANSLATION_URL=http://signal-translation:8004
+      - DETECTIONS_COMPILED_PATH=/app/detections/compiled
+      - DETECTIONS_YAML_PATH=/app/detections/yaml
     ports:
       - "8005:8005"
-    volumes:
-      - ./detections:/app/detections
 
   playbook-engine:
     build:
@@ -139,12 +169,16 @@ services:
       temporal:
         condition: service_started
     env_file:
-      - ./services/playbook-engine/.env.example
+      - ./services/playbook-engine/.env
     environment:
       - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
       - TEMPORAL_HOST=temporal:7233
-      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+      # attack-state-engine runs on the host, not in compose.
+      - ATTACK_STATE_ENGINE_URL=http://host.docker.internal:8002
+      - NARRATIVES_PATH=/app/attack-narratives
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8007:8007"
     volumes:
@@ -162,7 +196,7 @@ services:
       redis:
         condition: service_started
     env_file:
-      - ./services/analyst-portal/.env.example
+      - ./services/analyst-portal/.env
     environment:
       - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
@@ -180,14 +214,19 @@ services:
       redis:
         condition: service_started
     env_file:
-      - ./services/reporting/.env.example
+      - ./services/reporting/.env
     environment:
       - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
       - REDIS_URL=redis://redis:6379/2
       - API_URL=http://api:8000
-      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+      # attack-state-engine + correlation-engine + ingestor run on the host,
+      # not in compose. host.docker.internal resolves to the Docker host so
+      # reporting can reach them for trend + pipeline-status fan-out.
+      - ATTACK_STATE_ENGINE_URL=http://host.docker.internal:8002
       - DETECTION_ENGINE_URL=http://detection-engine:8005
       - ANALYST_PORTAL_URL=http://analyst-portal:8008
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8009:8009"
 

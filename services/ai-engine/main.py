@@ -91,10 +91,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         if _engine is None:
-            return JSONResponse({"status": "starting"}, status_code=503)
+            return JSONResponse(
+                {"status": "starting", "service": "ai-engine", "version": "0.1.0"},
+                status_code=503,
+            )
         consumer_ok = _engine.consumer is not None and _engine.consumer.is_connected()
         return {
             "status": "ok" if consumer_ok else "degraded",
+            "service": "ai-engine",
+            "version": "0.1.0",
             "consumer_connected": consumer_ok,
             "processed": _engine.consumer.processed if _engine.consumer else 0,
             "errors": _engine.consumer.errors if _engine.consumer else 0,

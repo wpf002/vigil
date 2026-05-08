@@ -15,6 +15,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from .config import IngestorConfig, get_config
+from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
 from .connectors.sentinel import SentinelConnector
 from .connectors.splunk_base import SplunkConnectionError, SplunkAuthError
@@ -45,13 +46,33 @@ class IngestorEngine:
         self._poll_errors: int = 0
 
     async def start(self) -> None:
+        """Boot the ingest loop. SIEM unreachable / unconfigured leaves the
+        engine in a degraded-but-running state so the FastAPI /health endpoint
+        keeps responding — useful for local dev where Splunk isn't available."""
         logger.info("ingestor.starting", siem_mode=self.config.siem_mode)
-        self.producer.connect()
-        self._connector = self._build_connector()
-        await self._connector.connect()
-        healthy = await self._connector.health_check()
+        try:
+            self.producer.connect()
+        except Exception as e:
+            logger.warning("ingestor.kafka_unavailable", error=str(e))
+
+        try:
+            self._connector = self._build_connector()
+            await self._connector.connect()
+            healthy = await self._connector.health_check()
+        except Exception as e:
+            logger.warning("ingestor.connector_init_failed", error=str(e))
+            healthy = False
+
         if not healthy:
-            raise RuntimeError(f"{self.config.siem_mode} health check failed on startup")
+            logger.warning(
+                "ingestor.degraded",
+                siem_mode=self.config.siem_mode,
+                detail="SIEM not reachable — entering degraded mode (no polling)",
+            )
+            # Park: keep the process alive so /health and /status respond.
+            self._running = False
+            return
+
         self._running = True
         await self._poll_loop()
 
@@ -115,6 +136,9 @@ class IngestorEngine:
             hits = await self._connector.get_active_alerts(since=since)
             return [self._connector.map_alert(h, self.config.tenant_id) for h in hits]
 
+        if mode == SIEMMode.DEMO:
+            return await self._connector.get_events_since(since=since, tenant_id=self.config.tenant_id)
+
         return []
 
     def _build_connector(self):
@@ -147,6 +171,9 @@ class IngestorEngine:
                 resource_group=cfg.sentinel_resource_group,
                 workspace_name=cfg.sentinel_workspace_name,
             )
+
+        if mode == SIEMMode.DEMO:
+            return DemoConnector(batch_size=1)
 
         if mode == SIEMMode.ELASTIC:
             for k in ("elastic_url", "elastic_api_key_id", "elastic_api_key_secret"):
@@ -196,11 +223,28 @@ app = FastAPI(title="VIGIL Ingestor", version="0.1.0", lifespan=lifespan)
 
 @app.get("/health")
 async def health():
+    """Three-state health:
+      ok          — actively polling a configured SIEM, Kafka connected
+      not_configured — running but no SIEM credentials supplied (fresh dev)
+      degraded    — running but Kafka unavailable / SIEM unreachable
+    All three return 200 so the pipeline aggregator surfaces the state
+    distinctly without flagging the service as 'unreachable'.
+    """
+    base = {"service": "ingestor", "version": "0.1.0"}
     if not engine:
-        return JSONResponse({"status": "starting"}, status_code=503)
+        return JSONResponse({**base, "status": "starting"}, status_code=503)
     s = engine.get_status()
-    ok = s["running"] and s["kafka_connected"]
-    return JSONResponse({"status": "ok" if ok else "degraded", **s}, status_code=200 if ok else 503)
+    siem_configured = (
+        engine.config.siem_mode == SIEMMode.DEMO
+        or bool(engine.config.splunk_host or engine.config.sentinel_tenant_id or engine.config.elastic_url)
+    )
+    if s["running"] and s["kafka_connected"]:
+        status = "ok"
+    elif not siem_configured:
+        status = "not_configured"
+    else:
+        status = "degraded"
+    return JSONResponse({**base, "status": status, **s}, status_code=200)
 
 
 @app.get("/status")

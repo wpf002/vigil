@@ -39,6 +39,13 @@ class AttackStateConfig(BaseSettings):
     # Internal service-to-service key (e.g. ai-engine PATCHing narratives).
     internal_api_key: str = "dev-internal-key-change-me"
 
+    # Demo auto-resolver: periodically resolves a fraction of aged attacks so
+    # MTTR/SLA metrics populate without requiring a real analyst. Off by default.
+    auto_resolve_enabled: bool = False
+    auto_resolve_interval_seconds: int = 90
+    auto_resolve_min_age_minutes: int = 8
+    auto_resolve_fraction: float = 0.4
+
 
 _config: Optional[AttackStateConfig] = None
 

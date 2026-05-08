@@ -3,7 +3,12 @@ import type { ImpactLevel, MITRETactic } from "@/types/attacks";
 
 export function timeAgo(iso: string): string {
   try {
-    return formatDistanceToNow(parseISO(iso), { addSuffix: true });
+    // date-fns prepends "about" / "almost" / "over" to inexact distances.
+    // Strip those for a tighter SOC look.
+    return formatDistanceToNow(parseISO(iso), { addSuffix: true }).replace(
+      /^(about|almost|over|less than)\s+/,
+      "",
+    );
   } catch {
     return iso;
   }

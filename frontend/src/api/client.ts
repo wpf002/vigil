@@ -2,6 +2,33 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { refresh } from "./auth";
 import { useAuthStore } from "@/store/authStore";
 
+/**
+ * Pull a renderable string out of an arbitrary VIGIL error envelope.
+ * Handles flat ({error,detail}) and nested ({detail:{error,detail}}) shapes
+ * — the latter is what FastAPI returns when an HTTPException is raised
+ * with a dict detail. Falling back to JSON keeps the message safe to
+ * embed in JSX (must not be an object, or React throws).
+ */
+export function extractErrorMessage(data: unknown): string | undefined {
+  if (data == null) return undefined;
+  if (typeof data === "string") return data;
+  if (typeof data === "object") {
+    const d = data as Record<string, unknown>;
+    if (typeof d.error === "string") return d.error;
+    if (typeof d.detail === "string") return d.detail;
+    if (typeof d.message === "string") return d.message;
+    if (d.detail && typeof d.detail === "object") {
+      return extractErrorMessage(d.detail);
+    }
+    try {
+      return JSON.stringify(d);
+    } catch {
+      return undefined;
+    }
+  }
+  return String(data);
+}
+
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8002";
 const DEV_TENANT = import.meta.env.VITE_DEV_TENANT_ID ?? "";
 
@@ -74,9 +101,7 @@ apiClient.interceptors.response.use(
       }
     }
 
-    const data = err.response?.data as { error?: string; detail?: string } | undefined;
-    if (data?.error) err.message = data.error;
-    else if (data?.detail) err.message = data.detail;
+    err.message = extractErrorMessage(err.response?.data) ?? err.message;
     return Promise.reject(err);
   },
 );

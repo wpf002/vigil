@@ -38,7 +38,7 @@ export function CompliancePage() {
     setPending(id);
     setError(null);
     try {
-      await exportReport(id, 30);
+      await exportReport(id, "pdf", 30);
       setLastGenerated((cur) => ({ ...cur, [id]: new Date().toLocaleString() }));
     } catch (e) {
       setError(`Failed to generate ${id.toUpperCase()} report: ${(e as Error).message}`);

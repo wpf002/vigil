@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { authClient as apiClient } from "./auth";
 
 export interface APIKeySummary {
   key_id: string;
@@ -9,6 +9,7 @@ export interface APIKeySummary {
   expires_at: string | null;
   revoked: boolean;
   created_at: string;
+  use_count: number;
 }
 
 export interface APIKeyCreated extends APIKeySummary {

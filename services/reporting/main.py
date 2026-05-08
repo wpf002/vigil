@@ -26,6 +26,8 @@ from .aggregator import Aggregator
 from .cache import TenantCache
 from .compliance import ComplianceAssembler
 from .config import ReportingConfig, get_config
+from .pdf_export import render_compliance_pdf, render_executive_pdf
+from .pipeline import collect_pipeline_status
 from .scheduler import SnapshotScheduler
 
 logger = structlog.get_logger(__name__)
@@ -186,6 +188,12 @@ def create_app() -> FastAPI:
         except Exception as e:
             return JSONResponse({"status": "degraded", "error": str(e)}, status_code=503)
 
+    @app.get("/pipeline/status")
+    async def pipeline_status(_: TenantPrincipal = Depends(get_principal)):
+        """Authenticated server-side aggregator for the FE Pipeline page.
+        Fans out /health to every VIGIL service over host.docker.internal."""
+        return ok(await collect_pipeline_status())
+
     @app.get("/executive/summary")
     async def executive_summary(principal: TenantPrincipal = Depends(get_principal)):
         tenant = _tenant_uuid(principal)
@@ -255,12 +263,12 @@ def create_app() -> FastAPI:
     @app.get("/reports/export")
     async def reports_export(
         type: str = Query("executive"),
-        format: str = Query("json"),
+        format: str = Query("pdf"),
         period_days: int = Query(30, ge=1, le=365),
         principal: TenantPrincipal = Depends(get_principal),
     ):
-        if format != "json":
-            return err("only format=json is supported", code=400)
+        if format not in ("pdf", "json"):
+            return err("format must be 'pdf' or 'json'", code=400)
         tenant = _tenant_uuid(principal)
         report_type = type.lower()
         if report_type == "soc2":
@@ -283,7 +291,23 @@ def create_app() -> FastAPI:
             return err(f"unknown report type: {type}", code=400)
 
         date_part = datetime.now(timezone.utc).strftime("%Y%m%d")
-        filename = f"vigil-{report_type}-report-{date_part}.json"
+        filename = f"vigil-{report_type}-report-{date_part}.{format}"
+
+        if format == "pdf":
+            try:
+                if report_type == "executive":
+                    pdf_bytes = render_executive_pdf(payload)
+                else:
+                    pdf_bytes = render_compliance_pdf(payload)
+            except Exception as e:
+                logger.exception("reporting.pdf_render_failed", error=str(e))
+                return err(f"PDF render failed: {e}", code=500)
+            return StreamingResponse(
+                iter([pdf_bytes]),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f"attachment; filename={filename}"},
+            )
+
         return StreamingResponse(
             iter([json.dumps(payload, indent=2, default=str)]),
             media_type="application/json",

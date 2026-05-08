@@ -6,8 +6,10 @@ All endpoints scope queries to the tenant_id derived from the JWT claim.
 """
 
 from __future__ import annotations
+import asyncio
+import random
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
@@ -70,13 +72,101 @@ _store: Optional[AttackStateStore] = None
 _config: Optional[AttackStateConfig] = None
 
 
+async def _auto_resolve_loop() -> None:
+    """Background task: periodically resolves aged attacks so demo
+    deployments populate MTTR / SLA metrics without manual analyst action.
+
+    Selects active attacks older than `auto_resolve_min_age_minutes` and
+    resolves a random `auto_resolve_fraction` of them with a status of
+    RESOLVED or CONTAINED (weighted toward RESOLVED). The first eligible
+    transition stamps `first_response_at`; the same transition stamps
+    `resolved_at` since both move together for unattended resolution.
+    """
+    cfg = get_config()
+    rng = random.Random(0xC0FFEE)
+    while True:
+        try:
+            await asyncio.sleep(cfg.auto_resolve_interval_seconds)
+            if _store is None:
+                continue
+            cutoff = datetime.now(timezone.utc) - timedelta(
+                minutes=cfg.auto_resolve_min_age_minutes
+            )
+            sql = """
+                SELECT attack_id, tenant_id, state
+                FROM attack_states
+                WHERE status = 'active' AND first_seen <= $1
+                ORDER BY first_seen ASC
+                LIMIT 50
+            """
+            async with _store.pool.acquire() as conn:
+                rows = await conn.fetch(sql, cutoff)
+            if not rows:
+                continue
+            resolved = 0
+            for row in rows:
+                if rng.random() > cfg.auto_resolve_fraction:
+                    continue
+                from .models.attack_state import AttackState  # local import: avoid cycles
+                state = AttackState.model_validate_json(
+                    row["state"] if isinstance(row["state"], str) else row["state"].decode()
+                )
+                # Resolve most attacks; contain a small minority (≈25%).
+                new_status = (
+                    AttackStateStatus.CONTAINED if rng.random() < 0.25
+                    else AttackStateStatus.RESOLVED
+                )
+                now = datetime.now(timezone.utc)
+                state.status = new_status
+                state.last_updated = now
+                if state.first_response_at is None:
+                    # Place first response somewhere between first_seen and now,
+                    # so MTTR isn't pinned to the polling interval.
+                    span = (now - state.first_seen).total_seconds()
+                    state.first_response_at = state.first_seen + timedelta(
+                        seconds=span * rng.uniform(0.2, 0.6)
+                    )
+                if state.resolved_at is None:
+                    state.resolved_at = now
+                if new_status == AttackStateStatus.CONTAINED:
+                    state.response_status.containment = True
+                    state.response_status.containment_at = now
+                await _store.update(state)
+                resolved += 1
+            if resolved:
+                logger.info(
+                    "attack_state.auto_resolved",
+                    resolved=resolved,
+                    candidates=len(rows),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.warning("attack_state.auto_resolve_failed", error=str(e))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _store, _config
     _config = get_config()
     _store = await AttackStateStore.from_dsn(_config.database_url)
     logger.info("attack_state_service.started", port=_config.port)
+    auto_task: Optional[asyncio.Task] = None
+    if _config.auto_resolve_enabled:
+        auto_task = asyncio.create_task(_auto_resolve_loop())
+        logger.info(
+            "attack_state.auto_resolve_enabled",
+            interval_s=_config.auto_resolve_interval_seconds,
+            min_age_m=_config.auto_resolve_min_age_minutes,
+            fraction=_config.auto_resolve_fraction,
+        )
     yield
+    if auto_task:
+        auto_task.cancel()
+        try:
+            await auto_task
+        except asyncio.CancelledError:
+            pass
     if _store:
         await _store.close()
 
@@ -132,14 +222,30 @@ async def list_attacks(
     phase: Optional[MITRETactic] = Query(None),
     min_confidence: Optional[float] = Query(None, ge=0.0, le=1.0),
     momentum: Optional[Momentum] = Query(None),
+    status: Optional[str] = Query(
+        None,
+        description="Filter by status. Pass 'all' to include resolved/false-positive (default: active only).",
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
+    status_arg: Optional[AttackStateStatus]
+    if status is None:
+        status_arg = AttackStateStatus.ACTIVE
+    elif status.lower() == "all":
+        status_arg = None
+    else:
+        try:
+            status_arg = AttackStateStatus(status.lower())
+        except ValueError:
+            return err(f"unknown status '{status}'", code=400)
+
     states = await store.search(
         tenant_id=principal.tenant_id,
         phase=phase,
         min_confidence=min_confidence,
         momentum=momentum,
+        status=status_arg,
         limit=limit,
         offset=offset,
     )
@@ -204,11 +310,30 @@ async def update_status(
     if state is None:
         return err("Attack not found", code=404)
 
+    now = datetime.now(timezone.utc)
+    previous_status = state.status
     state.status = body.status
+    state.last_updated = now
+
+    # First time the analyst touches the attack (any non-active status) → first_response_at.
+    if state.first_response_at is None and body.status != AttackStateStatus.ACTIVE:
+        state.first_response_at = now
+
+    # Terminal statuses → resolved_at (idempotent: keep the original resolution time on re-PATCH).
+    terminal = {
+        AttackStateStatus.RESOLVED,
+        AttackStateStatus.FALSE_POSITIVE,
+        AttackStateStatus.CONTAINED,
+    }
+    if body.status in terminal and state.resolved_at is None:
+        state.resolved_at = now
+    elif body.status == AttackStateStatus.ACTIVE and previous_status in terminal:
+        # Reopened — clear the resolution stamp.
+        state.resolved_at = None
+
     if body.status == AttackStateStatus.CONTAINED:
         state.response_status.containment = True
-        state.response_status.containment_at = datetime.now(timezone.utc)
-    state.last_updated = datetime.now(timezone.utc)
+        state.response_status.containment_at = now
 
     if body.analyst_note:
         existing = state.analyst_summary or ""

@@ -53,12 +53,19 @@ class SplunkMode(str, Enum):
 
 class SIEMMode(str, Enum):
     """Top-level dispatcher for the ingestor. Splunk modes overlap
-    with SplunkMode values so existing callers continue to work."""
+    with SplunkMode values so existing callers continue to work.
+
+    DEMO synthesizes CDM events on a fixed schedule — no real SIEM
+    connection needed. Used for local dev so the full ingest →
+    correlation → attack-state pipeline runs end-to-end without
+    customer telemetry.
+    """
     ES = "es"
     CORE = "core"
     HEC = "hec"
     SENTINEL = "sentinel"
     ELASTIC = "elastic"
+    DEMO = "demo"
 
 
 class UserEntity(BaseModel):

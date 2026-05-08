@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { refresh } from "./auth";
+import { extractErrorMessage } from "./client";
 import { useAuthStore } from "@/store/authStore";
 import type {
   ExecutiveSummary,
@@ -67,9 +68,7 @@ reportingClient.interceptors.response.use(
         return reportingClient(original);
       }
     }
-    const data = err.response?.data as { error?: string; detail?: string } | undefined;
-    if (data?.error) err.message = data.error;
-    else if (data?.detail) err.message = data.detail;
+    err.message = extractErrorMessage(err.response?.data) ?? err.message;
     return Promise.reject(err);
   },
 );
@@ -113,17 +112,18 @@ export async function getCompliance(
 
 export async function exportReport(
   type: "soc2" | "pci" | "nist" | "executive",
+  format: "pdf" | "json" = "pdf",
   period_days = 30,
 ): Promise<void> {
   const res = await reportingClient.get(`/reports/export`, {
-    params: { type, format: "json", period_days },
+    params: { type, format, period_days },
     responseType: "blob",
   });
   const url = URL.createObjectURL(res.data as Blob);
   const a = document.createElement("a");
   a.href = url;
   const date = new Date().toISOString().slice(0, 10);
-  a.download = `vigil-${type}-report-${date}.json`;
+  a.download = `vigil-${type}-report-${date}.${format}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

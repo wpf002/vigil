@@ -78,7 +78,7 @@ export function ExecutiveDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-3">
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            Attack volume — 30d
+            Attack Volume — 30d
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={trend.data?.attack_volume ?? []}>
@@ -106,7 +106,7 @@ export function ExecutiveDashboard() {
 
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            Attacks by phase
+            Attacks By Phase
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <PieChart>
@@ -144,7 +144,7 @@ export function ExecutiveDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            MTTR trend — 30d (seconds)
+            MTTR Trend — 30d
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={trend.data?.mttr_seconds ?? []}>
@@ -166,7 +166,7 @@ export function ExecutiveDashboard() {
 
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            SLA breach rate — 30d
+            SLA Breach Rate — 30d
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={trend.data?.sla_breach_rate ?? []}>

@@ -15,6 +15,7 @@ import {
   getDetection,
   getDetectionHistory,
   getDetectionPerformance,
+  markFalsePositive,
   rollbackDetection,
 } from "@/api/detections";
 import { useAuthStore } from "@/store/authStore";
@@ -203,11 +204,29 @@ function Cell({ label, value }: { label: string; value: string }) {
 }
 
 function PerformanceTab({ detectionId }: { detectionId: string }) {
+  const queryClient = useQueryClient();
   const perf = useQuery({
     queryKey: ["detection-performance", detectionId],
     queryFn: () => getDetectionPerformance(detectionId, 30),
     refetchInterval: 30_000,
   });
+  const [pendingFp, setPendingFp] = useState<string | null>(null);
+
+  async function handleMarkFp(signalId: string) {
+    if (pendingFp) return;
+    setPendingFp(signalId);
+    try {
+      await markFalsePositive(detectionId, signalId);
+      await queryClient.invalidateQueries({
+        queryKey: ["detection-performance", detectionId],
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to mark false positive";
+      alert(msg);
+    } finally {
+      setPendingFp(null);
+    }
+  }
 
   if (perf.isLoading) {
     return (
@@ -302,6 +321,7 @@ function PerformanceTab({ detectionId }: { detectionId: string }) {
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Confidence</th>
                 <th className="px-3 py-2">Outcome</th>
+                <th className="px-3 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -317,10 +337,29 @@ function PerformanceTab({ detectionId }: { detectionId: string }) {
                       ? pct(s.confidence_contribution)
                       : "—"}
                   </td>
-                  <td className="px-3 py-2 text-fg-muted">
-                    {s.was_false_positive
-                      ? "false positive"
-                      : s.closed_as ?? "open"}
+                  <td className="px-3 py-2">
+                    {s.was_false_positive ? (
+                      <span className="vigil-badge border-warning/40 bg-warning/10 text-warning">
+                        False Positive
+                      </span>
+                    ) : (
+                      <span className="text-fg-muted">{s.closed_as ?? "open"}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {s.was_false_positive ? (
+                      <span className="text-fg-faint text-[11px]">—</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleMarkFp(s.signal_id)}
+                        disabled={pendingFp === s.signal_id}
+                        className="text-[11px] font-mono text-fg-muted hover:text-warning disabled:opacity-50"
+                        title="Mark as false positive"
+                      >
+                        {pendingFp === s.signal_id ? "Marking…" : "Mark FP"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -391,7 +430,9 @@ function HistoryTab({
               <td className="px-3 py-2 text-fg-muted">
                 {v.deployed_at ? timeAgo(v.deployed_at) : "—"}
               </td>
-              <td className="px-3 py-2 text-fg-muted">{v.deployed_by ?? "—"}</td>
+              <td className="px-3 py-2 text-fg-muted">
+                {v.deployed_by ?? "VIGIL Platform"}
+              </td>
               <td className="px-3 py-2">
                 <span
                   className={`vigil-badge ${

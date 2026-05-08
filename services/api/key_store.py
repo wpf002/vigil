@@ -63,6 +63,7 @@ class APIKeyRow:
     expires_at: Optional[datetime]
     revoked: bool
     created_at: datetime
+    use_count: int = 0
 
 
 @dataclass
@@ -91,6 +92,7 @@ def _api_key_row(row) -> APIKeyRow:
         expires_at=row.get("expires_at"),
         revoked=row["revoked"],
         created_at=row["created_at"],
+        use_count=int(row.get("use_count") or 0),
     )
 
 
@@ -190,7 +192,12 @@ class KeyStore:
     async def touch_last_used(self, key_id: UUID, when: datetime) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
-                "UPDATE api_keys SET last_used_at = $2 WHERE key_id = $1",
+                """
+                UPDATE api_keys
+                   SET last_used_at = $2,
+                       use_count = use_count + 1
+                 WHERE key_id = $1
+                """,
                 key_id, when,
             )
 

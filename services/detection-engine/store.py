@@ -152,6 +152,35 @@ class DetectionStore:
             rows = await conn.fetch(sql, *params)
         return [dict(r) for r in rows]
 
+    async def refresh_active_artifacts(
+        self,
+        *,
+        detection_id: str,
+        tenant_id: UUID,
+        yaml_content: str,
+        compiled_spl: Optional[str],
+        compiled_kql: Optional[str],
+        compiled_eql: Optional[str],
+        notes: Optional[str] = None,
+    ) -> None:
+        """In-place refresh of the compiled artifacts on the currently-active
+        version for this detection. Used by the manifest sync to re-attach
+        SPL/KQL/EQL when a previous seed failed to resolve the file paths."""
+        sql = """
+            UPDATE detection_versions
+               SET yaml_content = $3,
+                   compiled_spl = $4,
+                   compiled_kql = $5,
+                   compiled_eql = $6,
+                   notes = COALESCE($7, notes)
+             WHERE detection_id = $1 AND tenant_id = $2 AND status = 'active'
+        """
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                sql, detection_id, tenant_id, yaml_content,
+                compiled_spl, compiled_kql, compiled_eql, notes,
+            )
+
     async def list_versions_for(
         self,
         detection_id: str,

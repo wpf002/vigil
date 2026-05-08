@@ -157,6 +157,8 @@ class AttackState(BaseModel):
     first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_updated: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    first_response_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat(), UUID: lambda v: str(v)}
