@@ -63,3 +63,20 @@ export function phaseLabel(phase: MITRETactic): string {
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(" ");
 }
+
+/** Title-case any kebab/snake/space-separated string. Safe for display only. */
+export function titleCase(value: string | null | undefined): string {
+  if (!value) return "—";
+  return value
+    .replace(/[-_]/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function yesNo(value: boolean | null | undefined): string {
+  if (value === true) return "Yes";
+  if (value === false) return "No";
+  return "—";
+}

@@ -108,6 +108,68 @@ services:
     ports:
       - "8006:8006"
 
+  detection-engine:
+    build:
+      context: ./services/detection-engine
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./services/detection-engine/.env.example
+    environment:
+      - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
+      - SIGNAL_TRANSLATION_URL=http://signal-translation:8004
+    ports:
+      - "8005:8005"
+    volumes:
+      - ./detections:/app/detections
+
+  playbook-engine:
+    build:
+      context: ./services/playbook-engine
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      redis:
+        condition: service_started
+      temporal:
+        condition: service_started
+    env_file:
+      - ./services/playbook-engine/.env.example
+    environment:
+      - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - TEMPORAL_HOST=temporal:7233
+      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+    ports:
+      - "8007:8007"
+    volumes:
+      - ./attack-narratives:/app/attack-narratives
+
+  analyst-portal:
+    build:
+      context: ./services/analyst-portal
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
+      redis:
+        condition: service_started
+    env_file:
+      - ./services/analyst-portal/.env.example
+    environment:
+      - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+    ports:
+      - "8008:8008"
+
 volumes:
   postgres_data:
   redis_data:

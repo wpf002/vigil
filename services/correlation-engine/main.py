@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from ._compat import AttackStateStore
 from .config import CorrelationConfig, get_config
 from .consumer import SignalConsumer
+from .detection_engine_client import DetectionEngineClient
 from .entity_index import EntityIndex
 from .handlers.signal_handler import SignalHandler
 from .publisher import AttackPublisher
@@ -32,6 +33,7 @@ class CorrelationEngine:
         self.entity_index: Optional[EntityIndex] = None
         self.publisher: Optional[AttackPublisher] = None
         self.consumer: Optional[SignalConsumer] = None
+        self.detection_engine: Optional[DetectionEngineClient] = None
         self._consumer_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
@@ -54,10 +56,16 @@ class CorrelationEngine:
         )
         self.publisher.connect()
 
+        self.detection_engine = DetectionEngineClient(
+            base_url=self.config.detection_engine_url,
+            internal_key=self.config.internal_api_key,
+        )
+
         handler = SignalHandler(
             store=self.store,
             entity_index=self.entity_index,
             publisher=self.publisher,
+            detection_engine_client=self.detection_engine,
         )
 
         self.consumer = SignalConsumer(
@@ -82,6 +90,8 @@ class CorrelationEngine:
                 pass
         if self.publisher:
             self.publisher.disconnect()
+        if self.detection_engine:
+            await self.detection_engine.close()
         if self.entity_index:
             await self.entity_index.close()
         if self.store:

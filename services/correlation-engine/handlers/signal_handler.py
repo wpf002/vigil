@@ -38,6 +38,7 @@ from .._compat import (
     PhaseStatus,
 )
 from .. import detections_registry
+from ..detection_engine_client import DetectionEngineClient
 from ..entity_index import EntityIndex
 
 logger = structlog.get_logger(__name__)
@@ -60,11 +61,13 @@ class SignalHandler:
         entity_index: EntityIndex,
         publisher: Publisher,
         confidence_engine: Optional[ConfidenceEngine] = None,
+        detection_engine_client: Optional[DetectionEngineClient] = None,
     ):
         self.store = store
         self.entity_index = entity_index
         self.publisher = publisher
         self.confidence = confidence_engine or ConfidenceEngine()
+        self.detection_engine = detection_engine_client
 
     # ── public ────────────────────────────────────────────────────────────────
 
@@ -224,6 +227,8 @@ class SignalHandler:
         if is_escalation:
             await self.publisher.publish_attack_escalated(state, transition)
 
+        await self._record_signal_fire(state, evidence)
+
         logger.info(
             "signal.attack.updated",
             attack_id=str(state.attack_id),
@@ -275,6 +280,9 @@ class SignalHandler:
         await self.entity_index.bind(event.tenant_id, entities, state.attack_id)
 
         await self.publisher.publish_attack_created(state)
+
+        await self._record_signal_fire(state, evidence)
+
         logger.info(
             "signal.attack.created",
             attack_id=str(state.attack_id),
@@ -344,6 +352,33 @@ class SignalHandler:
             add(state.users, event.user.username)
         if event.process:
             add(state.processes, event.process.process_name)
+
+    async def _record_signal_fire(
+        self,
+        state: AttackState,
+        evidence: EvidenceItem,
+    ) -> None:
+        """Best-effort post to detection-engine /internal/signals/record.
+
+        Detection-engine is the governance layer; if it's down, correlation
+        must continue. Failures are logged but never propagated.
+        """
+        if self.detection_engine is None or not self.detection_engine.enabled:
+            return
+        if not evidence.detection_id:
+            return
+        try:
+            await self.detection_engine.record_signal(
+                detection_id=evidence.detection_id,
+                tenant_id=state.tenant_id,
+                fired_at=evidence.timestamp,
+                attack_id=state.attack_id,
+                phase_contributed=evidence.phase.value,
+                status_contributed=evidence.status_contributed.value,
+                confidence_contribution=evidence.confidence_contribution,
+            )
+        except Exception as e:
+            logger.warning("signal_handler.detection_record_failed", error=str(e))
 
     def _upsert_phase_state(
         self,

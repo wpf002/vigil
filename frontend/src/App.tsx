@@ -3,6 +3,10 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout } from "@/components/AppLayout";
 import { AttackList } from "@/pages/AttackList";
 import { AttackDetail } from "@/pages/AttackDetail";
+import { DetectionLibrary } from "@/pages/DetectionLibrary";
+import { DetectionDetail } from "@/pages/DetectionDetail";
+import { PlaybookList } from "@/pages/PlaybookList";
+import { PlaybookDetail } from "@/pages/PlaybookDetail";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
@@ -29,6 +33,10 @@ export function App() {
                 <Route path="/" element={<Navigate to="/attacks" replace />} />
                 <Route path="/attacks" element={<AttackList />} />
                 <Route path="/attacks/:id" element={<AttackDetail />} />
+                <Route path="/detections" element={<DetectionLibrary />} />
+                <Route path="/detections/:id" element={<DetectionDetail />} />
+                <Route path="/playbooks" element={<PlaybookList />} />
+                <Route path="/playbooks/:id" element={<PlaybookDetail />} />
                 <Route
                   path="*"
                   element={

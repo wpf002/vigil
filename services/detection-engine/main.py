@@ -1,0 +1,397 @@
+"""VIGIL Detection Engine.
+
+Governance & control plane for detections. Tracks versions, signal fires,
+and per-detection performance. Coverage report consumed by analyst portal
+and frontend.
+"""
+
+from __future__ import annotations
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+from uuid import UUID
+
+import httpx
+import structlog
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
+from .auth import TenantPrincipal, get_principal, require_admin
+from .config import DetectionEngineConfig, get_config
+from .coverage import build_coverage_report
+from .performance import PerformanceAggregator, aggregate_for_detection
+from .registry_sync import sync_manifest_to_store
+from .store import DetectionStore
+
+logger = structlog.get_logger(__name__)
+
+
+# ── envelope ──────────────────────────────────────────────────────────────────
+
+class Envelope(BaseModel):
+    data: Any = None
+    meta: dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None
+
+
+def ok(data: Any, **meta) -> dict:
+    return Envelope(data=data, meta=meta).model_dump(mode="json")
+
+
+def err(message: str, code: int = 400) -> JSONResponse:
+    return JSONResponse(
+        status_code=code,
+        content=Envelope(error=message).model_dump(mode="json"),
+    )
+
+
+# ── request/response models ───────────────────────────────────────────────────
+
+class SignalRecordRequest(BaseModel):
+    detection_id: str
+    tenant_id: UUID
+    fired_at: datetime
+    attack_id: Optional[UUID] = None
+    phase_contributed: Optional[str] = None
+    status_contributed: Optional[str] = None
+    confidence_contribution: Optional[float] = None
+
+
+# ── lifespan / state ──────────────────────────────────────────────────────────
+
+_store: Optional[DetectionStore] = None
+_config: Optional[DetectionEngineConfig] = None
+_aggregator: Optional[PerformanceAggregator] = None
+
+
+def _platform_tenant(cfg: DetectionEngineConfig) -> UUID:
+    try:
+        return UUID(cfg.platform_tenant_id)
+    except ValueError:
+        return UUID("00000000-0000-0000-0000-000000000000")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _store, _config, _aggregator
+    _config = get_config()
+    _store = await DetectionStore.from_dsn(_config.database_url)
+
+    compiled_path = Path(_config.detections_compiled_path).resolve()
+    yaml_path = Path(_config.detections_yaml_path).resolve()
+    platform_tenant = _platform_tenant(_config)
+
+    try:
+        await sync_manifest_to_store(
+            store=_store,
+            compiled_path=compiled_path,
+            yaml_path=yaml_path,
+            tenant_id=platform_tenant,
+        )
+    except Exception as e:
+        # Sync is best-effort; service can still serve queries against existing
+        # rows if the manifest is unreadable.
+        logger.warning("detection_engine.startup_sync_failed", error=str(e))
+
+    _aggregator = PerformanceAggregator(
+        store=_store,
+        tenant_id=platform_tenant,
+        interval_seconds=_config.performance_interval_seconds,
+    )
+    _aggregator.start()
+
+    logger.info("detection_engine.started", port=_config.port)
+    try:
+        yield
+    finally:
+        if _aggregator is not None:
+            await _aggregator.stop()
+        if _store is not None:
+            await _store.close()
+
+
+app = FastAPI(title="VIGIL Detection Engine", version="0.1.0", lifespan=lifespan)
+
+
+def _install_cors(app: FastAPI) -> None:
+    cfg = get_config()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cfg.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+
+_install_cors(app)
+
+
+def get_store() -> DetectionStore:
+    if _store is None:
+        raise HTTPException(status_code=503, detail="Store not initialized")
+    return _store
+
+
+def _tenant_uuid(principal: TenantPrincipal) -> UUID:
+    """Tenant IDs from JWT are strings. Coerce safely."""
+    try:
+        return UUID(principal.tenant_id)
+    except (ValueError, TypeError):
+        # Dev bypass uses a free-form X-Tenant-Id; fall back to platform tenant.
+        return _platform_tenant(get_config())
+
+
+# ── endpoints ─────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    if _store is None:
+        return JSONResponse({"status": "starting"}, status_code=503)
+    try:
+        async with _store.pool.acquire() as conn:
+            await conn.execute("SELECT 1")
+        return {"status": "ok", "service": "detection-engine", "version": "0.1.0"}
+    except Exception as e:
+        return JSONResponse({"status": "degraded", "error": str(e)}, status_code=503)
+
+
+@app.get("/detections")
+async def list_detections(
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    rows = await store.list_active_detections(tenant, platform_tenant_id=platform)
+    enriched = []
+    for r in rows:
+        # Performance is keyed off the row's own tenant — could be platform.
+        row_tenant = r["tenant_id"]
+        perf = await store.latest_performance(r["detection_id"], row_tenant)
+        enriched.append({**_serialize_version(r), "performance": _serialize_performance(perf)})
+    return ok(enriched, count=len(enriched))
+
+
+@app.get("/detections/{detection_id}")
+async def get_detection(
+    detection_id: str,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    active = await store.get_active_version(detection_id, tenant, platform_tenant_id=platform)
+    if active is None:
+        return err("Detection not found", code=404)
+    perf = await store.latest_performance(detection_id, active["tenant_id"])
+    return ok({**_serialize_version(active), "performance": _serialize_performance(perf)})
+
+
+@app.get("/detections/{detection_id}/history")
+async def get_detection_history(
+    detection_id: str,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    versions = await store.list_versions_for(detection_id, tenant, platform_tenant_id=platform)
+    return ok([_serialize_version(v) for v in versions], count=len(versions))
+
+
+@app.get("/detections/{detection_id}/performance")
+async def get_detection_performance(
+    detection_id: str,
+    days: int = Query(30, ge=1, le=180),
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    active = await store.get_active_version(detection_id, tenant, platform_tenant_id=platform)
+    if active is None:
+        return err("Detection not found", code=404)
+
+    row_tenant = active["tenant_id"]
+    perf = await store.latest_performance(detection_id, row_tenant)
+    trend = await store.daily_fires_trend(detection_id, row_tenant, days=days)
+    signals = await store.list_signals_for(detection_id, row_tenant, limit=200)
+    return ok(
+        {
+            "detection_id": detection_id,
+            "summary": _serialize_performance(perf),
+            "trend": trend,
+            "signals": [_serialize_signal(s) for s in signals],
+        }
+    )
+
+
+@app.patch("/detections/{detection_id}/rollback")
+async def rollback_detection(
+    detection_id: str,
+    principal: TenantPrincipal = Depends(require_admin),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    new_active = await store.rollback_to_previous(detection_id, tenant)
+    if new_active is None:
+        return err("No prior version to roll back to", code=409)
+
+    cfg = get_config()
+    # Best-effort: ask signal-translation to recompile from the now-active YAML.
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{cfg.signal_translation_url.rstrip('/')}/compile",
+                json={
+                    "detection_id": detection_id,
+                    "yaml": new_active.get("yaml_content"),
+                },
+            )
+    except Exception as e:
+        logger.warning("detection_engine.recompile_failed", error=str(e), detection_id=detection_id)
+
+    logger.info(
+        "detection_engine.rolled_back",
+        detection_id=detection_id,
+        new_version=new_active.get("version"),
+        actor=principal.user_id,
+    )
+    return ok(_serialize_version(new_active))
+
+
+@app.patch("/detections/{detection_id}/signals/{signal_id}/false-positive")
+async def mark_false_positive(
+    detection_id: str,
+    signal_id: UUID,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    updated = await store.mark_signal_false_positive(signal_id, tenant)
+    if updated is None:
+        return err("Signal not found", code=404)
+    if updated.get("detection_id") != detection_id:
+        return err("Signal does not belong to this detection", code=400)
+
+    # Recompute trailing 30d on the spot so the analyst portal sees the
+    # new fp_rate immediately.
+    try:
+        await aggregate_for_detection(
+            store=store,
+            detection_id=detection_id,
+            tenant_id=tenant,
+            window_days=30,
+        )
+    except Exception as e:
+        logger.warning(
+            "detection_engine.recompute_failed",
+            detection_id=detection_id,
+            error=str(e),
+        )
+    return ok(_serialize_signal(updated))
+
+
+@app.get("/coverage")
+async def coverage(
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    active = await store.list_active_detections(tenant, platform_tenant_id=platform)
+    return ok(build_coverage_report(active))
+
+
+@app.post("/internal/signals/record")
+async def record_signal_internal(
+    body: SignalRecordRequest,
+    x_internal_key: Optional[str] = Header(None, alias="X-Internal-Key"),
+    store: DetectionStore = Depends(get_store),
+):
+    cfg = get_config()
+    if not x_internal_key or x_internal_key != cfg.internal_api_key:
+        raise HTTPException(status_code=401, detail="Invalid internal key")
+
+    fired_at = body.fired_at
+    if fired_at.tzinfo is None:
+        fired_at = fired_at.replace(tzinfo=timezone.utc)
+
+    signal_id = await store.record_signal(
+        detection_id=body.detection_id,
+        tenant_id=body.tenant_id,
+        fired_at=fired_at,
+        attack_id=body.attack_id,
+        phase_contributed=body.phase_contributed,
+        status_contributed=body.status_contributed,
+        confidence_contribution=body.confidence_contribution,
+    )
+    return ok({"signal_id": str(signal_id)})
+
+
+# ── serializers ───────────────────────────────────────────────────────────────
+
+def _serialize_version(row: dict[str, Any]) -> dict[str, Any]:
+    state_impact = row.get("state_impact")
+    if isinstance(state_impact, str):
+        # asyncpg returns JSONB as str when no codec is registered.
+        import json
+        try:
+            state_impact = json.loads(state_impact)
+        except json.JSONDecodeError:
+            state_impact = {}
+    return {
+        "version_id": str(row["version_id"]),
+        "detection_id": row["detection_id"],
+        "version": row["version"],
+        "att_ck_tactic": row["att_ck_tactic"],
+        "att_ck_technique": row["att_ck_technique"],
+        "state_impact": state_impact or {},
+        "status": row["status"],
+        "deployed_at": row["deployed_at"].isoformat() if row.get("deployed_at") else None,
+        "deployed_by": str(row["deployed_by"]) if row.get("deployed_by") else None,
+        "tenant_id": str(row["tenant_id"]),
+        "notes": row.get("notes"),
+        "yaml_content": row.get("yaml_content"),
+        "compiled_spl": row.get("compiled_spl"),
+        "compiled_kql": row.get("compiled_kql"),
+        "compiled_eql": row.get("compiled_eql"),
+    }
+
+
+def _serialize_performance(row: Optional[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    if row is None:
+        return None
+    return {
+        "perf_id": str(row["perf_id"]),
+        "detection_id": row["detection_id"],
+        "tenant_id": str(row["tenant_id"]),
+        "period_start": row["period_start"].isoformat() if row.get("period_start") else None,
+        "period_end": row["period_end"].isoformat() if row.get("period_end") else None,
+        "total_fires": row["total_fires"],
+        "false_positives": row["false_positives"],
+        "true_positives": row["true_positives"],
+        "escalations": row["escalations"],
+        "fp_rate": row["fp_rate"],
+        "avg_confidence": row["avg_confidence"],
+        "computed_at": row["computed_at"].isoformat() if row.get("computed_at") else None,
+    }
+
+
+def _serialize_signal(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "signal_id": str(row["signal_id"]),
+        "detection_id": row["detection_id"],
+        "tenant_id": str(row["tenant_id"]),
+        "fired_at": row["fired_at"].isoformat() if row.get("fired_at") else None,
+        "attack_id": str(row["attack_id"]) if row.get("attack_id") else None,
+        "phase_contributed": row.get("phase_contributed"),
+        "status_contributed": row.get("status_contributed"),
+        "confidence_contribution": row.get("confidence_contribution"),
+        "was_false_positive": row.get("was_false_positive", False),
+        "closed_as": row.get("closed_as"),
+    }

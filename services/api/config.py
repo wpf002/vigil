@@ -22,6 +22,14 @@ class APIConfig(BaseSettings):
     # JSON-decode the env value. Read through the cors_origins property.
     cors_allow_origins: str = "http://localhost:5173,http://localhost:3000"
 
+    # Bootstrap secret for /auth/register/staff. Anyone with this value can
+    # register a vigil_analyst or vigil_admin account. Empty disables the
+    # endpoint entirely.
+    staff_registration_key: str = ""
+
+    # Display name of the platform tenant that owns VIGIL staff accounts.
+    platform_tenant_name: str = "VIGIL Platform"
+
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.cors_allow_origins.split(",") if o.strip()]

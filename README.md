@@ -146,6 +146,28 @@ chmod +x scripts/bootstrap.sh
 docker-compose up -d
 ```
 
+### Apply database migrations
+
+Each service owns its schema in `services/<svc>/migrations/`. Apply them in
+this order against the local Postgres (port 5433):
+
+```bash
+PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/api/migrations/001_auth.sql
+
+PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/attack-state-engine/migrations/001_initial.sql
+
+PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/detection-engine/migrations/001_detection_engine.sql
+
+PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/playbook-engine/migrations/001_playbooks.sql
+
+PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/analyst-portal/migrations/001_analyst_portal.sql
+```
+
 ### Run a service
 ```bash
 cd services/ingestor
@@ -166,10 +188,10 @@ uvicorn main:app --reload --port 8001
 | `api` | ✅ Complete — Custom JWT auth (HS256 + bcrypt + refresh rotation), tenants, RBAC, 16 tests |
 | `signal-translation` | ✅ Complete — YAML compiler, field normalization, ATT&CK coverage, 12 tests |
 | `ai-engine` | ✅ Complete — Claude narrative generator, prompt caching, Redis cache, 11 tests |
-| `frontend` | ✅ Complete — Auth flows, AttackList/AttackDetail, narrative UI |
-| `detection-engine` | 🔲 Pending |
-| `playbook-engine` | 🔲 Pending |
-| `analyst-portal` | 🔲 Pending |
+| `frontend` | ✅ Complete — Auth flows, AttackList/AttackDetail, narrative UI, detections + playbooks pages |
+| `detection-engine` | ✅ Complete — Detection registry, version history, FP-rate performance, ATT&CK coverage, rollback, 15 tests |
+| `playbook-engine` | ✅ Complete — Temporal-backed response workflow, narrative loader, escalation consumer, 7 tests |
+| `analyst-portal` | ✅ Complete — Escalation queue, SLA monitor, analyst actions, shifts, role-gated to vigil_analyst/vigil_admin, 15 tests |
 
 ---
 

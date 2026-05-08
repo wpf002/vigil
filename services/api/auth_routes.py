@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
+from .config import get_config
 from .password import (
     PasswordValidationError,
     generate_temporary_password,
@@ -62,6 +63,13 @@ class LogoutRequest(BaseModel):
 class InviteRequest(BaseModel):
     email: EmailStr
     role: str = Field(default="analyst")
+
+
+class StaffRegisterRequest(BaseModel):
+    email: EmailStr
+    password: str
+    role: str = Field(default="vigil_analyst")
+    registration_key: str
 
 
 # ── response models ─────────────────────────────────────────────────────────
@@ -291,8 +299,12 @@ async def invite(
     admin: UserRow = Depends(require_admin),
     store: UserStore = Depends(get_store),
 ):
-    if req.role not in ("analyst", "admin"):
-        raise HTTPException(status_code=400, detail="role must be 'analyst' or 'admin'")
+    allowed_roles = ("analyst", "admin", "vigil_analyst", "vigil_admin")
+    if req.role not in allowed_roles:
+        raise HTTPException(
+            status_code=400,
+            detail=f"role must be one of {', '.join(allowed_roles)}",
+        )
 
     existing = await store.get_user_by_email(req.email)
     if existing is not None:
@@ -315,4 +327,54 @@ async def invite(
         user_id=new_user.user_id,
         email=new_user.email,
         temporary_password=temp_password,
+    )
+
+
+@router.post("/register/staff", response_model=TokenPair)
+async def register_staff(req: StaffRegisterRequest, store: UserStore = Depends(get_store)):
+    """Bootstrap registration for VIGIL staff (analyst-portal users).
+
+    Gated on STAFF_REGISTRATION_KEY config — the request body must include
+    that exact value. Empty config disables this endpoint entirely. After
+    bootstrap, additional staff should be onboarded via /auth/users/invite
+    by an existing admin.
+    """
+    cfg = get_config()
+    if not cfg.staff_registration_key:
+        raise HTTPException(status_code=403, detail="Staff registration disabled")
+    if req.registration_key != cfg.staff_registration_key:
+        raise HTTPException(status_code=403, detail="Invalid registration key")
+    if req.role not in ("vigil_analyst", "vigil_admin"):
+        raise HTTPException(
+            status_code=400,
+            detail="role must be 'vigil_analyst' or 'vigil_admin'",
+        )
+
+    try:
+        validate_password(req.password)
+    except PasswordValidationError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    existing = await store.get_user_by_email(req.email)
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    tenant = await store.get_or_create_tenant_by_name(cfg.platform_tenant_name)
+    user = await store.create_user(
+        tenant_id=tenant.tenant_id,
+        email=req.email,
+        password_hash=hash_password(req.password),
+        role=req.role,
+    )
+    access, refresh = await _issue_token_pair(store, user)
+    logger.info(
+        "auth.register_staff",
+        user_id=str(user.user_id),
+        role=user.role,
+        platform_tenant_id=str(tenant.tenant_id),
+    )
+    return TokenPair(
+        access_token=access,
+        refresh_token=refresh,
+        user=_user_response(user),
     )

@@ -85,6 +85,23 @@ class UserStore:
                 )
         return _tenant_row(tenant), _user_row(user)
 
+    async def get_or_create_tenant_by_name(self, name: str) -> TenantRow:
+        """Idempotent tenant lookup. Used to host VIGIL staff under a single
+        platform tenant without forcing a new tenant per registration.
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT tenant_id, name, created_at FROM tenants WHERE name = $1",
+                name,
+            )
+            if row is None:
+                row = await conn.fetchrow(
+                    "INSERT INTO tenants (name) VALUES ($1) "
+                    "RETURNING tenant_id, name, created_at",
+                    name,
+                )
+        return _tenant_row(row)
+
     async def create_user(
         self,
         *,

@@ -6,6 +6,7 @@ import {
   Settings,
   Activity,
   LogOut,
+  ListChecks,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/store/authStore";
@@ -21,7 +22,8 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/attacks", label: "Active Threats", icon: ShieldAlert, active: true },
   { to: "/history", label: "Resolved", icon: ScrollText },
-  { to: "/detections", label: "Detections", icon: Radar },
+  { to: "/detections", label: "Detections", icon: Radar, active: true },
+  { to: "/playbooks", label: "Playbooks", icon: ListChecks, active: true },
   { to: "/health", label: "Pipeline", icon: Activity },
   { to: "/settings", label: "Settings", icon: Settings },
 ];

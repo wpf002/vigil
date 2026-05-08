@@ -34,6 +34,11 @@ class CorrelationConfig(BaseSettings):
     port: int = 8003
     log_level: str = "INFO"
 
+    # detection-engine endpoint for fire-and-forget signal recording.
+    # Empty string disables the call entirely.
+    detection_engine_url: str = "http://localhost:8005"
+    internal_api_key: str = "dev-internal-key-change-me"
+
 
 _config: Optional[CorrelationConfig] = None
 
