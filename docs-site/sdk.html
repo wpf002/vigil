@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Python SDK</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html" class="active">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Python SDK</h1>
+    <p class="lead">Lightweight, dataclass-only client for the VIGIL public API.</p>
+
+    <h2>Install</h2>
+<pre><code>pip install vigil-sdk</code></pre>
+
+    <h2>Quickstart</h2>
+<pre><code>from vigil_sdk import VIGILClient
+
+client = VIGILClient(api_key="vgl_...", base_url="https://vigil.example.com")
+
+# Active attacks above 0.7 confidence.
+for a in client.list_attacks(min_confidence=0.7, limit=20):
+    print(a.attack_id, a.current_phase, a.confidence)
+
+# Executive summary.
+summary = client.get_executive_summary()
+print("MTTR (7d):", summary.mttr_seconds_7d)
+
+# Submit a normalized signal from a custom pipeline.
+client.submit_signal({
+    "tenant_id": "00000000-0000-0000-0000-000000000000",
+    "source_event_id": "abc-123",
+    "source_siem": "custom",
+    "title": "Suspicious sign-in",
+    "severity": "high",
+    "timestamp": "2026-05-08T01:00:00Z",
+    "raw_event": {},
+})</code></pre>
+
+    <h2>Methods</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Returns</th></tr></thead>
+      <tbody>
+        <tr><td><code>list_attacks(phase, min_confidence, limit)</code></td><td><code>list[AttackState]</code></td></tr>
+        <tr><td><code>get_attack(attack_id)</code></td><td><code>AttackState</code></td></tr>
+        <tr><td><code>list_detections(tactic, limit)</code></td><td><code>list[DetectionVersion]</code></td></tr>
+        <tr><td><code>get_coverage()</code></td><td><code>dict</code></td></tr>
+        <tr><td><code>get_executive_summary()</code></td><td><code>ExecutiveSummary</code></td></tr>
+        <tr><td><code>submit_signal(cdm_event)</code></td><td><code>dict</code></td></tr>
+        <tr><td><code>list_playbooks(limit)</code></td><td><code>list[PlaybookRun]</code></td></tr>
+      </tbody>
+    </table>
+
+    <h2>Webhook signature verification</h2>
+<pre><code>from vigil_sdk import verify_webhook_signature
+
+@app.post("/vigil/hook")
+async def handle(request):
+    body = await request.body()
+    sig = request.headers.get("X-VIGIL-Signature", "")
+    if not verify_webhook_signature(body, sig, secret=os.environ["VIGIL_WEBHOOK_SECRET"]):
+        return Response(status_code=401)
+    payload = json.loads(body)
+    # ... handle payload["event"], payload["data"] ...</code></pre>
+
+    <h2>Errors</h2>
+    <ul>
+      <li><code>VIGILAuthError</code> — 401/403</li>
+      <li><code>VIGILNotFoundError</code> — 404</li>
+      <li><code>VIGILRateLimitError</code> — 429</li>
+      <li><code>VIGILAPIError</code> — base; everything else</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

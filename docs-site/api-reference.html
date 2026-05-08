@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — API Reference</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html" class="active">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>API Reference</h1>
+    <p class="lead">All public REST endpoints across the VIGIL services.</p>
+
+    <h2>Authentication</h2>
+    <p>VIGIL accepts two bearer-token forms on every endpoint:</p>
+    <ul>
+      <li><strong>JWT</strong> — issued by <code>POST /auth/login</code>. Used by the web app and mobile app.</li>
+      <li><strong>API key</strong> — generated under Settings → API Keys, format <code>vgl_&lt;48-hex&gt;</code>. Used by integrations and the SDK. Subject to scope checks.</li>
+    </ul>
+<pre><code>Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Authorization: Bearer vgl_a1b2c3d4...</code></pre>
+
+    <h2>Error envelope</h2>
+<pre><code>{ "error": "Bad Request", "detail": "Password must be at least 12 characters" }</code></pre>
+
+    <h2>auth (port 8000)</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Path</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>POST</td><td>/auth/register</td><td>Tenant + admin bootstrap</td></tr>
+        <tr><td>POST</td><td>/auth/login</td><td>Issue JWT + refresh</td></tr>
+        <tr><td>POST</td><td>/auth/refresh</td><td>Refresh-token rotation</td></tr>
+        <tr><td>POST</td><td>/auth/logout</td><td>Revoke refresh token</td></tr>
+        <tr><td>GET</td><td>/auth/me</td><td>Current user</td></tr>
+        <tr><td>POST</td><td>/auth/users/invite</td><td>Admin invites a user</td></tr>
+        <tr><td>POST</td><td>/auth/api-keys</td><td>Create — raw key shown once</td></tr>
+        <tr><td>GET</td><td>/auth/api-keys</td><td>List (prefix only)</td></tr>
+        <tr><td>DELETE</td><td>/auth/api-keys/{id}</td><td>Revoke</td></tr>
+        <tr><td>GET</td><td>/auth/audit-log</td><td>Append-only audit history</td></tr>
+        <tr><td>POST</td><td>/webhooks</td><td>Register</td></tr>
+        <tr><td>GET</td><td>/webhooks</td><td>List</td></tr>
+        <tr><td>DELETE</td><td>/webhooks/{id}</td><td>Delete</td></tr>
+        <tr><td>POST</td><td>/webhooks/{id}/test</td><td>Fire a test payload</td></tr>
+        <tr><td>POST</td><td>/onboarding/check-connection</td><td>SIEM probe</td></tr>
+        <tr><td>POST</td><td>/onboarding/seed-demo</td><td>Synthetic CDM events (admin)</td></tr>
+        <tr><td>PATCH</td><td>/auth/me/onboarding-complete</td><td>Mark wizard finished</td></tr>
+      </tbody>
+    </table>
+
+    <h2>attack-state-engine (8002)</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Path</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td>/attacks</td></tr>
+        <tr><td>GET</td><td>/attacks/{id}</td></tr>
+        <tr><td>PATCH</td><td>/attacks/{id}/narrative</td></tr>
+        <tr><td>PATCH</td><td>/attacks/{id}/status</td></tr>
+        <tr><td>POST</td><td>/attacks/{id}/actions/{idx}/complete</td></tr>
+      </tbody>
+    </table>
+
+    <h2>detection-engine (8005)</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Path</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td>/detections</td></tr>
+        <tr><td>GET</td><td>/detections/{id}</td></tr>
+        <tr><td>GET</td><td>/detections/{id}/history</td></tr>
+        <tr><td>GET</td><td>/detections/{id}/performance</td></tr>
+        <tr><td>PATCH</td><td>/detections/{id}/rollback</td></tr>
+        <tr><td>GET</td><td>/coverage</td></tr>
+        <tr><td>GET</td><td>/marketplace</td></tr>
+        <tr><td>GET</td><td>/marketplace/{id}</td></tr>
+        <tr><td>POST</td><td>/marketplace/publish</td></tr>
+        <tr><td>POST</td><td>/marketplace/{id}/import</td></tr>
+        <tr><td>DELETE</td><td>/marketplace/{id}</td></tr>
+        <tr><td>GET</td><td>/marketplace/stats</td></tr>
+      </tbody>
+    </table>
+
+    <h2>reporting (8009)</h2>
+    <table>
+      <thead><tr><th>Method</th><th>Path</th></tr></thead>
+      <tbody>
+        <tr><td>GET</td><td>/executive/summary</td></tr>
+        <tr><td>GET</td><td>/executive/trend?days=7|30|90</td></tr>
+        <tr><td>GET</td><td>/compliance/soc2</td></tr>
+        <tr><td>GET</td><td>/compliance/pci</td></tr>
+        <tr><td>GET</td><td>/compliance/nist</td></tr>
+        <tr><td>GET</td><td>/compliance/audit-log</td></tr>
+        <tr><td>GET</td><td>/reports/export?type=soc2|pci|nist|executive</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Scopes (API keys)</h2>
+    <ul>
+      <li><code>read:attacks</code></li>
+      <li><code>read:detections</code></li>
+      <li><code>write:signals</code></li>
+      <li><code>read:reports</code></li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

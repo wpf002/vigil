@@ -33,6 +33,7 @@ class UserRow:
     is_active: bool
     created_at: datetime
     last_login: Optional[datetime]
+    onboarding_complete: bool = False
 
 
 @dataclass
@@ -143,6 +144,13 @@ class UserStore:
             )
         return _user_row(row) if row else None
 
+    async def mark_onboarding_complete(self, user_id: UUID) -> None:
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE users SET onboarding_complete = TRUE WHERE user_id = $1",
+                user_id,
+            )
+
     async def update_last_login(self, user_id: UUID, when: datetime) -> None:
         async with self.pool.acquire() as conn:
             await conn.execute(
@@ -213,7 +221,16 @@ def _user_row(row) -> UserRow:
         is_active=row["is_active"],
         created_at=row["created_at"],
         last_login=row["last_login"],
+        onboarding_complete=bool(row.get("onboarding_complete") if isinstance(row, dict) else _safe_get(row, "onboarding_complete", False)),
     )
+
+
+def _safe_get(row, key, default):
+    try:
+        v = row[key]
+        return default if v is None else v
+    except (KeyError, IndexError, TypeError):
+        return default
 
 
 def _refresh_row(row) -> RefreshTokenRow:

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Compliance</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html" class="active">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Compliance</h1>
+    <p class="lead">VIGIL ships exportable evidence packs for SOC 2 Type II, PCI-DSS, and NIST CSF. Generate them from <em>Compliance</em> in the web app or call the reporting endpoints directly.</p>
+
+    <h2>SOC 2 Type II evidence pack</h2>
+<pre><code>GET /compliance/soc2?period_days=30
+Authorization: Bearer &lt;jwt|api_key&gt;</code></pre>
+    <p>Returns three criteria:</p>
+    <ul>
+      <li><strong>CC6 — Logical Access.</strong> Per-tenant user accounts, roles, last login, active flag.</li>
+      <li><strong>CC7 — System Operations.</strong> AttackState counts by status, detection coverage score, response-time distribution.</li>
+      <li><strong>CC8 — Change Management.</strong> Detection version history with deploy timestamps, rollbacks.</li>
+    </ul>
+
+    <h2>PCI-DSS evidence pack</h2>
+    <ul>
+      <li><strong>Req 10 — Audit Logs.</strong> AttackState transition counts and evidence-chain completeness.</li>
+      <li><strong>Req 11 — Security Testing.</strong> Detection coverage score and last detection deployment.</li>
+    </ul>
+
+    <h2>NIST CSF mapping</h2>
+    <ul>
+      <li><strong>Identify.</strong> Coverage by ATT&amp;CK tactic.</li>
+      <li><strong>Protect.</strong> Active detection count.</li>
+      <li><strong>Detect.</strong> Total detection fires, average false-positive rate.</li>
+      <li><strong>Respond.</strong> Mean time to resolve, playbook completion rate.</li>
+      <li><strong>Recover.</strong> Attacks resolved, mean recovery time.</li>
+    </ul>
+
+    <h2>Audit log</h2>
+    <p>VIGIL records an append-only <code>audit_log</code> row for every:</p>
+    <ul>
+      <li><code>user.login</code>, <code>user.logout</code>, <code>user.created</code></li>
+      <li><code>api_key.created</code>, <code>api_key.revoked</code></li>
+      <li><code>webhook.registered</code></li>
+      <li><code>attack.status_changed</code>, <code>detection.rollback</code>, <code>playbook.started</code></li>
+    </ul>
+    <p>The table has no <code>DELETE</code> path exposed via any endpoint — retention is unlimited by design. Read via <code>GET /auth/audit-log</code> or <code>GET /compliance/audit-log</code>.</p>
+
+    <h2>Initiating a SOC 2 Type II audit</h2>
+    <div class="card note">
+      <p>VIGIL's exports cover the system-monitoring portion of a SOC 2 audit. They are <strong>not</strong> a substitute for the audit itself.</p>
+    </div>
+    <ol>
+      <li>Engage a licensed CPA firm. Typical timeline: 6–12 months from engagement to attestation.</li>
+      <li>Auditors will request:
+        <ul>
+          <li>An auditable evidence-collection window of at least 6 months.</li>
+          <li>Documented policies (access control, change management, incident response).</li>
+          <li>Continuous monitoring evidence — VIGIL's exports satisfy the SIEM portion.</li>
+          <li>Pen-test results from a separate firm.</li>
+        </ul>
+      </li>
+      <li>Pair the SOC 2 export with HR onboarding records, vendor management, and your risk register.</li>
+    </ol>
+
+    <h3>Trust Services Criteria mapped to VIGIL</h3>
+    <table>
+      <thead><tr><th>Criterion</th><th>VIGIL evidence</th></tr></thead>
+      <tbody>
+        <tr><td>Security (Common Criteria)</td><td>audit_log + access controls (CC6 pack)</td></tr>
+        <tr><td>Availability</td><td>Service health endpoints + uptime metrics</td></tr>
+        <tr><td>Processing Integrity</td><td>Detection version history (CC8 pack)</td></tr>
+        <tr><td>Confidentiality</td><td>JWT/HS256 + bcrypt cost-12 + scoped API keys</td></tr>
+      </tbody>
+    </table>
+  </main>
+</div>
+</body>
+</html>

@@ -1,14 +1,20 @@
-"""Response activities — Temporal activity stubs.
+"""Response activities — dispatch to SOAR backend or stub.
 
-Each activity logs at INFO with tenant_id + attack_id in context, sleeps
-briefly to simulate work, and returns success. In production these would
-call SOAR APIs (e.g. CrowdStrike isolate, Okta credential reset).
+Each activity dispatches based on the SOAR_BACKEND env var:
+  "stub"   → existing log-and-sleep behavior (default; used in dev/tests)
+  "xsoar"  → Cortex XSOAR REST client
+  "tines"  → Tines webhook client
+
+On failure the activity raises so Temporal can pause the workflow and
+notify analysts. Stub mode is unchanged from earlier phases — existing
+tests continue to pass.
 """
 
 from __future__ import annotations
 import asyncio
+import os
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 import structlog
 from temporalio import activity
@@ -26,48 +32,97 @@ def _bind(tenant_id: str, attack_id: str, **extra) -> structlog.stdlib.BoundLogg
     return logger.bind(tenant_id=tenant_id, attack_id=attack_id, **extra)
 
 
-async def _simulate(action: str, tenant_id: str, attack_id: str, **kwargs) -> ActivityResult:
-    log = _bind(tenant_id=tenant_id, attack_id=attack_id, action=action, **kwargs)
+def _backend() -> str:
+    return (os.getenv("SOAR_BACKEND") or "stub").lower()
+
+
+def _xsoar_client():
+    from ..soar.xsoar import XSOARClient
+    base = os.getenv("XSOAR_BASE_URL") or ""
+    key = os.getenv("XSOAR_API_KEY") or ""
+    if not base or not key:
+        raise RuntimeError("SOAR_BACKEND=xsoar requires XSOAR_BASE_URL and XSOAR_API_KEY")
+    return XSOARClient(base_url=base, api_key=key)
+
+
+def _tines_client():
+    from ..soar.tines import TinesClient
+    webhooks = {
+        "isolate_host":              os.getenv("TINES_WEBHOOK_ISOLATE_HOST", ""),
+        "kill_process":              os.getenv("TINES_WEBHOOK_KILL_PROCESS", ""),
+        "reset_credentials":         os.getenv("TINES_WEBHOOK_RESET_CREDENTIALS", ""),
+        "capture_forensic_snapshot": os.getenv("TINES_WEBHOOK_FORENSIC_SNAPSHOT", ""),
+        "block_protocol":            os.getenv("TINES_WEBHOOK_BLOCK_PROTOCOL", ""),
+        "review_auth_logs":          os.getenv("TINES_WEBHOOK_REVIEW_AUTH_LOGS", ""),
+    }
+    return TinesClient(api_key=os.getenv("TINES_API_KEY"), webhooks=webhooks)
+
+
+async def _stub(action: str, tenant_id: str, attack_id: str, **kwargs) -> dict[str, Any]:
+    log = _bind(tenant_id=tenant_id, attack_id=attack_id, action=action, backend="stub", **kwargs)
     log.info("playbook.activity.start")
     await asyncio.sleep(1)
     log.info("playbook.activity.complete")
-    return ActivityResult(success=True, detail=f"{action} simulated")
+    return {"success": True, "backend": "stub", "reference_id": None}
+
+
+async def _dispatch(action: str, *, tenant_id: str, attack_id: str, **kwargs) -> dict[str, Any]:
+    backend = _backend()
+    if backend == "stub":
+        return await _stub(action, tenant_id, attack_id, **kwargs)
+    if backend == "xsoar":
+        client = _xsoar_client()
+        method = getattr(client, action)
+        return await method(tenant_id=tenant_id, attack_id=attack_id, **kwargs)
+    if backend == "tines":
+        client = _tines_client()
+        method = getattr(client, action)
+        return await method(tenant_id=tenant_id, attack_id=attack_id, **kwargs)
+    raise RuntimeError(f"Unknown SOAR_BACKEND: {backend}")
+
+
+# ── temporal activity wrappers ────────────────────────────────────────────
 
 
 @activity.defn
 async def isolate_host(host: str, tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("isolate_host", tenant_id, attack_id, host=host)
-    return res.success
+    res = await _dispatch("isolate_host", host=host, tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn
 async def kill_process(process: str, host: Optional[str], tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("kill_process", tenant_id, attack_id, process=process, host=host)
-    return res.success
+    res = await _dispatch("kill_process", process=process, host=host,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn
 async def reset_credentials(user: str, tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("reset_credentials", tenant_id, attack_id, user=user)
-    return res.success
+    res = await _dispatch("reset_credentials", user=user,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn
 async def capture_forensic_snapshot(host: str, tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("capture_forensic_snapshot", tenant_id, attack_id, host=host)
-    return res.success
+    res = await _dispatch("capture_forensic_snapshot", host=host,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn
 async def block_protocol(protocol: str, host: Optional[str], tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("block_protocol", tenant_id, attack_id, protocol=protocol, host=host)
-    return res.success
+    res = await _dispatch("block_protocol", protocol=protocol, host=host,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn
 async def review_auth_logs(host: str, tenant_id: str, attack_id: str) -> bool:
-    res = await _simulate("review_auth_logs", tenant_id, attack_id, host=host)
-    return res.success
+    res = await _dispatch("review_auth_logs", host=host,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
 
 
 @activity.defn

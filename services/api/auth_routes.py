@@ -14,7 +14,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr, Field
 
+from .audit_logger import list_audit_log, log_event
 from .config import get_config
+from .key_store import (
+    KeyStore,
+    generate_api_key,
+    hash_api_key,
+)
 from .password import (
     PasswordValidationError,
     generate_temporary_password,
@@ -152,6 +158,13 @@ async def require_admin(user: UserRow = Depends(require_user)) -> UserRow:
     return user
 
 
+def get_key_store(request: Request) -> KeyStore:
+    store: Optional[KeyStore] = getattr(request.app.state, "key_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Key store not initialized")
+    return store
+
+
 # ── helpers ─────────────────────────────────────────────────────────────────
 
 async def _issue_token_pair(store: UserStore, user: UserRow) -> tuple[str, str]:
@@ -182,7 +195,7 @@ def _user_response(user: UserRow) -> UserResponse:
 # ── routes ──────────────────────────────────────────────────────────────────
 
 @router.post("/register", response_model=TokenPair)
-async def register(req: RegisterRequest, store: UserStore = Depends(get_store)):
+async def register(req: RegisterRequest, request: Request, store: UserStore = Depends(get_store)):
     try:
         validate_password(req.password)
     except PasswordValidationError as e:
@@ -199,11 +212,16 @@ async def register(req: RegisterRequest, store: UserStore = Depends(get_store)):
     )
     access, refresh = await _issue_token_pair(store, user)
     logger.info("auth.register", user_id=str(user.user_id), tenant_id=str(user.tenant_id))
+    await log_event(
+        store.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="user.created", resource_type="user",
+        resource_id=str(user.user_id), request=request,
+    )
     return TokenPair(access_token=access, refresh_token=refresh, user=_user_response(user))
 
 
 @router.post("/login", response_model=TokenPair)
-async def login(req: LoginRequest, store: UserStore = Depends(get_store)):
+async def login(req: LoginRequest, request: Request, store: UserStore = Depends(get_store)):
     user = await store.get_user_by_email(req.email)
     # Constant-message failure for invalid email + wrong password to avoid
     # leaking which one is wrong.
@@ -216,6 +234,11 @@ async def login(req: LoginRequest, store: UserStore = Depends(get_store)):
 
     access, refresh = await _issue_token_pair(store, user)
     logger.info("auth.login", user_id=str(user.user_id))
+    await log_event(
+        store.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="user.login", resource_type="user",
+        resource_id=str(user.user_id), request=request,
+    )
     return TokenPair(access_token=access, refresh_token=refresh, user=_user_response(user))
 
 
@@ -270,6 +293,7 @@ async def refresh(req: RefreshRequest, store: UserStore = Depends(get_store)):
 @router.post("/logout")
 async def logout(
     req: LogoutRequest,
+    request: Request,
     user: UserRow = Depends(require_user),
     store: UserStore = Depends(get_store),
 ):
@@ -279,6 +303,11 @@ async def logout(
         if verify_token(req.refresh_token, t.token_hash):
             await store.revoke_refresh_token(t.token_id)
             break
+    await log_event(
+        store.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="user.logout", resource_type="user",
+        resource_id=str(user.user_id), request=request,
+    )
     return {"message": "logged out"}
 
 
@@ -378,3 +407,257 @@ async def register_staff(req: StaffRegisterRequest, store: UserStore = Depends(g
         refresh_token=refresh,
         user=_user_response(user),
     )
+
+
+# ── API keys ────────────────────────────────────────────────────────────────
+
+
+VALID_SCOPES = {
+    "read:attacks", "read:detections", "write:signals", "read:reports",
+}
+
+
+class APIKeyCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    scopes: list[str] = Field(default_factory=list)
+    expires_at: Optional[datetime] = None
+
+
+class APIKeyCreatedResponse(BaseModel):
+    key_id: UUID
+    name: str
+    key_prefix: str
+    scopes: list[str]
+    raw_key: str
+    expires_at: Optional[datetime]
+
+
+class APIKeyResponse(BaseModel):
+    key_id: UUID
+    name: str
+    key_prefix: str
+    scopes: list[str]
+    last_used_at: Optional[datetime]
+    expires_at: Optional[datetime]
+    revoked: bool
+    created_at: datetime
+
+
+@router.post("/api-keys", response_model=APIKeyCreatedResponse)
+async def create_api_key_route(
+    req: APIKeyCreateRequest,
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    invalid = [s for s in req.scopes if s not in VALID_SCOPES]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid scopes: {', '.join(invalid)}",
+        )
+
+    raw, prefix = generate_api_key()
+    row = await keys.create_api_key(
+        tenant_id=user.tenant_id, created_by=user.user_id,
+        name=req.name, key_prefix=prefix, key_hash=hash_api_key(raw),
+        scopes=req.scopes, expires_at=req.expires_at,
+    )
+    logger.info(
+        "auth.api_key.created",
+        key_id=str(row.key_id), tenant_id=str(user.tenant_id),
+        prefix=prefix,
+    )
+    await log_event(
+        keys.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="api_key.created", resource_type="api_key",
+        resource_id=str(row.key_id),
+        detail={"name": row.name, "scopes": row.scopes, "prefix": row.key_prefix},
+    )
+    return APIKeyCreatedResponse(
+        key_id=row.key_id, name=row.name, key_prefix=row.key_prefix,
+        scopes=row.scopes, raw_key=raw, expires_at=row.expires_at,
+    )
+
+
+@router.get("/api-keys", response_model=list[APIKeyResponse])
+async def list_api_keys_route(
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    rows = await keys.list_api_keys(user.tenant_id)
+    return [
+        APIKeyResponse(
+            key_id=r.key_id, name=r.name, key_prefix=r.key_prefix,
+            scopes=r.scopes, last_used_at=r.last_used_at,
+            expires_at=r.expires_at, revoked=r.revoked, created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/api-keys/{key_id}")
+async def revoke_api_key_route(
+    key_id: UUID,
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    revoked = await keys.revoke_api_key(key_id=key_id, tenant_id=user.tenant_id)
+    if not revoked:
+        raise HTTPException(status_code=404, detail="Key not found")
+    logger.info("auth.api_key.revoked", key_id=str(key_id), tenant_id=str(user.tenant_id))
+    await log_event(
+        keys.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="api_key.revoked", resource_type="api_key",
+        resource_id=str(key_id),
+    )
+    return {"revoked": True}
+
+
+# ── Audit log ───────────────────────────────────────────────────────────────
+
+
+@router.get("/audit-log")
+async def get_audit_log(
+    days: int = 30,
+    event_type: Optional[str] = None,
+    user_id: Optional[UUID] = None,
+    user: UserRow = Depends(require_user),
+    store: UserStore = Depends(get_store),
+):
+    """Returns the tenant's audit_log entries. Append-only — there is no
+    DELETE counterpart by design (SOC 2 retention)."""
+    rows = await list_audit_log(
+        store.pool, tenant_id=user.tenant_id, user_id=user_id,
+        event_type=event_type, days=days,
+    )
+    return rows
+
+
+# ── Webhooks ────────────────────────────────────────────────────────────────
+
+
+VALID_WEBHOOK_EVENTS = {
+    "attack.created", "attack.updated", "attack.escalated",
+    "attack.resolved", "playbook.paused",
+}
+
+
+class WebhookCreateRequest(BaseModel):
+    url: str
+    secret: str = Field(min_length=8)
+    events: list[str]
+
+
+class WebhookResponse(BaseModel):
+    webhook_id: UUID
+    url: str
+    events: list[str]
+    active: bool
+    last_fired_at: Optional[datetime]
+    failure_count: int
+    created_at: datetime
+
+
+webhook_router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+
+@webhook_router.post("", response_model=WebhookResponse)
+async def create_webhook_route(
+    req: WebhookCreateRequest,
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    invalid = [e for e in req.events if e not in VALID_WEBHOOK_EVENTS]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid events: {', '.join(invalid)}",
+        )
+    if not req.events:
+        raise HTTPException(status_code=400, detail="At least one event required")
+
+    row = await keys.create_webhook(
+        tenant_id=user.tenant_id, url=req.url, secret=req.secret, events=req.events,
+    )
+    logger.info(
+        "webhook.registered", webhook_id=str(row.webhook_id), tenant_id=str(user.tenant_id),
+    )
+    await log_event(
+        keys.pool, tenant_id=user.tenant_id, user_id=user.user_id,
+        event_type="webhook.registered", resource_type="webhook",
+        resource_id=str(row.webhook_id),
+        detail={"url": row.url, "events": row.events},
+    )
+    return WebhookResponse(
+        webhook_id=row.webhook_id, url=row.url, events=row.events,
+        active=row.active, last_fired_at=row.last_fired_at,
+        failure_count=row.failure_count, created_at=row.created_at,
+    )
+
+
+@webhook_router.get("", response_model=list[WebhookResponse])
+async def list_webhooks_route(
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    rows = await keys.list_webhooks(user.tenant_id)
+    return [
+        WebhookResponse(
+            webhook_id=r.webhook_id, url=r.url, events=r.events,
+            active=r.active, last_fired_at=r.last_fired_at,
+            failure_count=r.failure_count, created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
+@webhook_router.delete("/{webhook_id}")
+async def delete_webhook_route(
+    webhook_id: UUID,
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    deleted = await keys.delete_webhook(webhook_id=webhook_id, tenant_id=user.tenant_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return {"deleted": True}
+
+
+@webhook_router.post("/{webhook_id}/test")
+async def test_webhook_route(
+    webhook_id: UUID,
+    user: UserRow = Depends(require_user),
+    keys: KeyStore = Depends(get_key_store),
+):
+    """Fire a test payload to the webhook URL. Returns the HTTP status code
+    or an error string. Does not update last_fired_at — this is a probe."""
+    import httpx
+    import json
+    from .key_store import hmac_sign
+
+    wh = await keys.get_webhook(webhook_id=webhook_id, tenant_id=user.tenant_id)
+    if wh is None:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+
+    body = {
+        "event": "test",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "tenant_id": str(user.tenant_id),
+        "data": {"message": "VIGIL webhook test"},
+    }
+    payload = json.dumps(body).encode("utf-8")
+    sig = hmac_sign(wh.secret, payload)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(
+                wh.url,
+                content=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-VIGIL-Event": "test",
+                    "X-VIGIL-Signature": f"sha256={sig}",
+                },
+            )
+        return {"status_code": resp.status_code, "ok": resp.status_code < 400}
+    except Exception as e:
+        return {"status_code": None, "ok": False, "error": str(e)}

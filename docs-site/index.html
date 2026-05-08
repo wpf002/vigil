@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Documentation</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html" class="active">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>VIGIL Platform</h1>
+    <p class="lead">AI-native, SIEM-agnostic security operations. Replaces alert queues with persistent, deterministic AttackState narratives.</p>
+
+    <div class="card note">
+      <strong>What VIGIL is.</strong> A correlation, narrative, and response layer that sits on top of your existing SIEM (Splunk, Sentinel, or Elastic). Detections live as YAML, compile to SPL/KQL/EQL, and feed an attack-state engine that scores progression rather than alerts.
+    </div>
+
+    <h2>How it works</h2>
+    <ol>
+      <li><strong>Ingest.</strong> Pull Notable Events / Sentinel Incidents / Elastic alerts; normalize to a Common Data Model.</li>
+      <li><strong>Correlate.</strong> Map signals to AttackState objects via the entity graph and YAML detection registry.</li>
+      <li><strong>Narrate.</strong> Claude generates the attack story; deterministic confidence drives escalation.</li>
+      <li><strong>Respond.</strong> Temporal-backed playbooks dispatch to XSOAR / Tines / your stub.</li>
+      <li><strong>Report.</strong> Compliance evidence packs (SOC 2, PCI, NIST) pull from live data.</li>
+    </ol>
+
+    <h2>Read next</h2>
+    <ul>
+      <li><a href="getting-started.html">Getting Started</a> — bootstrap, migrations, first sign-in.</li>
+      <li><a href="architecture.html">Architecture</a> — the 10 services, Kafka topics, port map.</li>
+      <li><a href="detections.html">Detections</a> — how to write and deploy detection YAML.</li>
+      <li><a href="api-reference.html">API Reference</a> — every public REST endpoint.</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

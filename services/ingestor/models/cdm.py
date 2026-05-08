@@ -51,6 +51,16 @@ class SplunkMode(str, Enum):
     HEC = "hec"
 
 
+class SIEMMode(str, Enum):
+    """Top-level dispatcher for the ingestor. Splunk modes overlap
+    with SplunkMode values so existing callers continue to work."""
+    ES = "es"
+    CORE = "core"
+    HEC = "hec"
+    SENTINEL = "sentinel"
+    ELASTIC = "elastic"
+
+
 class UserEntity(BaseModel):
     username: Optional[str] = None
     user_id: Optional[str] = None

@@ -170,6 +170,27 @@ services:
     ports:
       - "8008:8008"
 
+  reporting:
+    build:
+      context: ./services/reporting
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - ./services/reporting/.env.example
+    environment:
+      - DATABASE_URL=postgresql://vigil:changeme@postgres:5432/vigil
+      - REDIS_URL=redis://redis:6379/2
+      - API_URL=http://api:8000
+      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+      - DETECTION_ENGINE_URL=http://detection-engine:8005
+      - ANALYST_PORTAL_URL=http://analyst-portal:8008
+    ports:
+      - "8009:8009"
+
 volumes:
   postgres_data:
   redis_data:

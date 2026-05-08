@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Competitive</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html" class="active">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Competitive Position</h1>
+    <p class="lead">VIGIL replaces alert queues with attack-state narratives. Here's how it stacks up against incumbents.</p>
+
+    <h2>Feature comparison</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Feature</th>
+          <th>VIGIL</th>
+          <th>ReliaQuest GreyMatter</th>
+          <th>Splunk ES</th>
+          <th>Microsoft Sentinel</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Detection format</td>
+          <td>YAML, customer-owned</td>
+          <td>Black-box, vendor-owned</td>
+          <td>SPL, customer-owned</td>
+          <td>KQL, customer-owned</td>
+        </tr>
+        <tr>
+          <td>Cross-SIEM portability</td>
+          <td>SPL + KQL + EQL from one YAML</td>
+          <td>—</td>
+          <td>Splunk-only</td>
+          <td>Sentinel-only</td>
+        </tr>
+        <tr>
+          <td>Attack-state model</td>
+          <td>First-class AttackState with confidence + momentum</td>
+          <td>Limited</td>
+          <td>—</td>
+          <td>Incidents (no progression model)</td>
+        </tr>
+        <tr>
+          <td>AI narrative</td>
+          <td>Claude Sonnet 4.6 with caching</td>
+          <td>Proprietary</td>
+          <td>Add-on / 3rd party</td>
+          <td>Copilot for Security (separate license)</td>
+        </tr>
+        <tr>
+          <td>Detection marketplace</td>
+          <td>Built-in, customer-publishable</td>
+          <td>—</td>
+          <td>Splunkbase (3rd-party)</td>
+          <td>Content Hub</td>
+        </tr>
+        <tr>
+          <td>SOAR</td>
+          <td>Cortex XSOAR + Tines (pluggable)</td>
+          <td>Proprietary</td>
+          <td>SOAR add-on</td>
+          <td>Logic Apps</td>
+        </tr>
+        <tr>
+          <td>SOC 2 evidence pack</td>
+          <td>Exportable from product</td>
+          <td>Vendor-managed</td>
+          <td>—</td>
+          <td>Compliance Manager (separate)</td>
+        </tr>
+        <tr>
+          <td>Pricing tier</td>
+          <td>Mid-market</td>
+          <td>Enterprise</td>
+          <td>Enterprise</td>
+          <td>Per-GB ingest</td>
+        </tr>
+        <tr>
+          <td>Deployment</td>
+          <td>Self-host or managed</td>
+          <td>Managed</td>
+          <td>Self-host or cloud</td>
+          <td>Cloud (Azure)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>When VIGIL wins</h2>
+    <ul>
+      <li><strong>Mid-market security teams</strong> who want their own detections but lack staff to run a custom correlation engine.</li>
+      <li><strong>Multi-SIEM orgs</strong> — write a detection once, deploy to Splunk and Sentinel.</li>
+      <li><strong>Compliance-driven buyers</strong> who need SOC 2 evidence without buying a separate GRC tool.</li>
+      <li><strong>Teams replacing GreyMatter</strong> who can't tolerate vendor-owned detection logic.</li>
+    </ul>
+
+    <h2>When VIGIL is not the answer</h2>
+    <ul>
+      <li>Pure log-storage replacement — VIGIL is not a SIEM, it sits on top of one.</li>
+      <li>Sub-100-event/sec environments where a managed MDR makes more economic sense.</li>
+    </ul>
+  </main>
+</div>
+</body>
+</html>

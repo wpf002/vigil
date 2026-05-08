@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Getting Started</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html" class="active">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Getting Started</h1>
+    <p class="lead">Bring up the platform locally in 10 minutes.</p>
+
+    <h2>Prerequisites</h2>
+    <ul>
+      <li>Python 3.12+</li>
+      <li>Node.js 20+</li>
+      <li>Docker + Docker Compose</li>
+      <li>~6 GB free RAM (Postgres, Kafka, Temporal, Elastic)</li>
+    </ul>
+
+    <h2>Bootstrap</h2>
+<pre><code>git clone https://github.com/yourorg/vigil
+cd vigil
+chmod +x scripts/bootstrap.sh
+./scripts/bootstrap.sh</code></pre>
+
+    <h2>Start infrastructure</h2>
+<pre><code>docker-compose up -d</code></pre>
+
+    <h2>Apply migrations</h2>
+    <p>Each service owns its schema in <code>services/&lt;svc&gt;/migrations/</code>. Apply in this order:</p>
+<pre><code>PGPASSWORD=changeme psql -h localhost -p 5433 -U vigil -d vigil \
+  -f services/api/migrations/001_auth.sql \
+  -f services/api/migrations/002_api_keys.sql \
+  -f services/api/migrations/003_onboarding.sql \
+  -f services/api/migrations/004_audit_log.sql \
+  -f services/attack-state-engine/migrations/001_initial.sql \
+  -f services/detection-engine/migrations/001_detection_engine.sql \
+  -f services/detection-engine/migrations/002_marketplace.sql \
+  -f services/playbook-engine/migrations/001_playbooks.sql \
+  -f services/analyst-portal/migrations/001_analyst_portal.sql \
+  -f services/reporting/migrations/001_reporting.sql</code></pre>
+
+    <h2>First sign-in</h2>
+    <ol>
+      <li>Open <a href="http://localhost:5173">http://localhost:5173</a></li>
+      <li>Click <em>Register</em>, create your tenant + admin account.</li>
+      <li>You'll be redirected to the onboarding wizard. Pick your SIEM and run the connection test.</li>
+      <li>The 4 platform detections (D1–D4) deploy automatically.</li>
+      <li>From the wizard, hit <em>Seed demo data</em> to publish synthetic CDM events and watch the first AttackState materialize.</li>
+    </ol>
+
+    <h2>Run a single service</h2>
+<pre><code>cd services/ingestor
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --port 8001</code></pre>
+  </main>
+</div>
+</body>
+</html>

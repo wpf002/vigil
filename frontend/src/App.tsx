@@ -9,6 +9,12 @@ import { PlaybookList } from "@/pages/PlaybookList";
 import { PlaybookDetail } from "@/pages/PlaybookDetail";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
+import { MarketplacePage } from "@/pages/MarketplacePage";
+import { ExecutiveDashboard } from "@/pages/ExecutiveDashboard";
+import { CompliancePage } from "@/pages/CompliancePage";
+import { APIKeysPage } from "@/pages/APIKeysPage";
+import { WebhooksPage } from "@/pages/WebhooksPage";
+import { OnboardingWizard } from "@/pages/OnboardingWizard";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { useAuthStore } from "@/store/authStore";
 
@@ -35,6 +41,12 @@ export function App() {
                 <Route path="/attacks/:id" element={<AttackDetail />} />
                 <Route path="/detections" element={<DetectionLibrary />} />
                 <Route path="/detections/:id" element={<DetectionDetail />} />
+                <Route path="/marketplace" element={<MarketplacePage />} />
+                <Route path="/dashboard" element={<ExecutiveDashboard />} />
+                <Route path="/compliance" element={<CompliancePage />} />
+                <Route path="/settings/api-keys" element={<APIKeysPage />} />
+                <Route path="/settings/webhooks" element={<WebhooksPage />} />
+                <Route path="/onboarding" element={<OnboardingWizard />} />
                 <Route path="/playbooks" element={<PlaybookList />} />
                 <Route path="/playbooks/:id" element={<PlaybookDetail />} />
                 <Route

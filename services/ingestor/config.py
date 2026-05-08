@@ -1,12 +1,15 @@
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from .models.cdm import SplunkMode
+from .models.cdm import SIEMMode, SplunkMode
 
 
 class IngestorConfig(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
-    splunk_host: str
+    # Top-level dispatcher. Splunk modes are still supported via SIEM_MODE=es|core.
+    siem_mode: SIEMMode = SIEMMode.ES
+
+    splunk_host: str = ""
     splunk_username: Optional[str] = None
     splunk_password: Optional[str] = None
     splunk_token: Optional[str] = None
@@ -16,6 +19,20 @@ class IngestorConfig(BaseSettings):
     splunk_max_events_per_poll: int = 500
     splunk_es_status_filter: list[str] = ["new"]
     splunk_es_severity_filter: list[str] = ["critical", "high", "medium"]
+
+    # Microsoft Sentinel.
+    sentinel_tenant_id: Optional[str] = None
+    sentinel_client_id: Optional[str] = None
+    sentinel_client_secret: Optional[str] = None
+    sentinel_subscription_id: Optional[str] = None
+    sentinel_resource_group: Optional[str] = None
+    sentinel_workspace_name: Optional[str] = None
+
+    # Elastic.
+    elastic_url: Optional[str] = None
+    elastic_api_key_id: Optional[str] = None
+    elastic_api_key_secret: Optional[str] = None
+    elastic_verify_ssl: bool = True
 
     kafka_bootstrap_servers: str = "localhost:9092"
     kafka_topic_signals: str = "vigil.signals.raw"

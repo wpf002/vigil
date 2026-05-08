@@ -10,8 +10,10 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .auth_routes import router as auth_router
+from .auth_routes import router as auth_router, webhook_router
 from .config import APIConfig, get_config
+from .key_store import KeyStore
+from .onboarding_routes import router as onboarding_router, auth_me_router
 from .user_store import UserStore
 
 logger = structlog.get_logger(__name__)
@@ -22,6 +24,7 @@ async def lifespan(app: FastAPI):
     cfg: APIConfig = get_config()
     store = await UserStore.from_dsn(cfg.database_url)
     app.state.user_store = store
+    app.state.key_store = KeyStore(store.pool)
     app.state.config = cfg
     logger.info("api.started", port=cfg.port, environment=cfg.environment)
     try:
@@ -43,6 +46,9 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(auth_router)
+    app.include_router(webhook_router)
+    app.include_router(onboarding_router)
+    app.include_router(auth_me_router)
 
     @app.exception_handler(RequestValidationError)
     async def _validation_handler(_request: Request, exc: RequestValidationError):

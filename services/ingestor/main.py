@@ -1,7 +1,7 @@
 """
 VIGIL Ingestor Service
 
-Polls Splunk, normalizes events to CDM,
+Polls Splunk / Sentinel / Elastic, normalizes events to CDM,
 publishes to vigil.signals.raw for the correlation engine.
 """
 
@@ -15,14 +15,19 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from .config import IngestorConfig, get_config
+from .connectors.elastic import ElasticConnector
+from .connectors.sentinel import SentinelConnector
 from .connectors.splunk_base import SplunkConnectionError, SplunkAuthError
 from .connectors.splunk_core import SplunkCoreConnector
 from .connectors.splunk_es import SplunkESConnector
-from .models.cdm import CDMEvent, SplunkMode
+from .models.cdm import CDMEvent, SIEMMode, SplunkMode
 from .normalizer.normalizer import EventNormalizer
 from .producer.kafka_producer import VIGILProducer
 
 logger = structlog.get_logger(__name__)
+
+
+SPLUNK_MODES = {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC}
 
 
 class IngestorEngine:
@@ -40,15 +45,13 @@ class IngestorEngine:
         self._poll_errors: int = 0
 
     async def start(self) -> None:
-        logger.info("ingestor.starting", mode=self.config.splunk_mode, host=self.config.splunk_host)
+        logger.info("ingestor.starting", siem_mode=self.config.siem_mode)
         self.producer.connect()
         self._connector = self._build_connector()
         await self._connector.connect()
         healthy = await self._connector.health_check()
         if not healthy:
-            raise SplunkConnectionError("Splunk health check failed on startup")
-        info = await self._connector.get_server_info()
-        logger.info("splunk.connected", version=info.get("version"))
+            raise RuntimeError(f"{self.config.siem_mode} health check failed on startup")
         self._running = True
         await self._poll_loop()
 
@@ -83,39 +86,85 @@ class IngestorEngine:
             await asyncio.sleep(self.config.splunk_poll_interval_seconds)
 
     async def _poll(self, since: datetime, until: datetime) -> list[CDMEvent]:
-        earliest = str(since.timestamp())
-        latest = str(until.timestamp())
-        if self.config.splunk_mode == SplunkMode.ES:
-            raw = await self._connector.get_notable_events(
-                earliest=earliest, latest=latest,
-                status_filter=self.config.splunk_es_status_filter,
-                severity_filter=self.config.splunk_es_severity_filter,
-                max_events=self.config.splunk_max_events_per_poll,
-            )
-            return [self.normalizer.normalize_notable_event(e, self.config.tenant_id) for e in raw]
-        elif self.config.splunk_mode == SplunkMode.CORE:
-            alerts = await self._connector.get_triggered_alerts(earliest=earliest, latest=latest)
-            events = []
-            for alert in alerts:
-                events.extend(self.normalizer.normalize_core_alert(alert, self.config.tenant_id))
-            return events
+        mode = self.config.siem_mode
+
+        if mode in SPLUNK_MODES:
+            earliest = str(since.timestamp())
+            latest = str(until.timestamp())
+            if mode == SIEMMode.ES:
+                raw = await self._connector.get_notable_events(
+                    earliest=earliest, latest=latest,
+                    status_filter=self.config.splunk_es_status_filter,
+                    severity_filter=self.config.splunk_es_severity_filter,
+                    max_events=self.config.splunk_max_events_per_poll,
+                )
+                return [self.normalizer.normalize_notable_event(e, self.config.tenant_id) for e in raw]
+            if mode == SIEMMode.CORE:
+                alerts = await self._connector.get_triggered_alerts(earliest=earliest, latest=latest)
+                events = []
+                for alert in alerts:
+                    events.extend(self.normalizer.normalize_core_alert(alert, self.config.tenant_id))
+                return events
+            return []
+
+        if mode == SIEMMode.SENTINEL:
+            incidents = await self._connector.get_incidents(since=since)
+            return [self._connector.map_incident(i, self.config.tenant_id) for i in incidents]
+
+        if mode == SIEMMode.ELASTIC:
+            hits = await self._connector.get_active_alerts(since=since)
+            return [self._connector.map_alert(h, self.config.tenant_id) for h in hits]
+
         return []
 
     def _build_connector(self):
-        kwargs = dict(
-            host=self.config.splunk_host,
-            username=self.config.splunk_username,
-            password=self.config.splunk_password,
-            token=self.config.splunk_token,
-            verify_ssl=self.config.splunk_verify_ssl,
-            mode=self.config.splunk_mode,
-        )
-        return SplunkESConnector(**kwargs) if self.config.splunk_mode == SplunkMode.ES else SplunkCoreConnector(**kwargs)
+        mode = self.config.siem_mode
+        cfg = self.config
+
+        if mode in {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC}:
+            kwargs = dict(
+                host=cfg.splunk_host,
+                username=cfg.splunk_username,
+                password=cfg.splunk_password,
+                token=cfg.splunk_token,
+                verify_ssl=cfg.splunk_verify_ssl,
+                mode=SplunkMode(mode.value) if mode.value in {"es", "core", "hec"} else SplunkMode.ES,
+            )
+            return SplunkESConnector(**kwargs) if mode == SIEMMode.ES else SplunkCoreConnector(**kwargs)
+
+        if mode == SIEMMode.SENTINEL:
+            for k in (
+                "sentinel_tenant_id", "sentinel_client_id", "sentinel_client_secret",
+                "sentinel_subscription_id", "sentinel_resource_group", "sentinel_workspace_name",
+            ):
+                if not getattr(cfg, k):
+                    raise RuntimeError(f"SIEM_MODE=sentinel requires {k.upper()}")
+            return SentinelConnector(
+                tenant_id=cfg.sentinel_tenant_id,
+                client_id=cfg.sentinel_client_id,
+                client_secret=cfg.sentinel_client_secret,
+                subscription_id=cfg.sentinel_subscription_id,
+                resource_group=cfg.sentinel_resource_group,
+                workspace_name=cfg.sentinel_workspace_name,
+            )
+
+        if mode == SIEMMode.ELASTIC:
+            for k in ("elastic_url", "elastic_api_key_id", "elastic_api_key_secret"):
+                if not getattr(cfg, k):
+                    raise RuntimeError(f"SIEM_MODE=elastic requires {k.upper()}")
+            return ElasticConnector(
+                url=cfg.elastic_url,
+                api_key_id=cfg.elastic_api_key_id,
+                api_key_secret=cfg.elastic_api_key_secret,
+                verify_ssl=cfg.elastic_verify_ssl,
+            )
+
+        raise RuntimeError(f"Unsupported SIEM_MODE: {mode}")
 
     def get_status(self) -> dict:
         return {
             "running": self._running,
-            "mode": self.config.splunk_mode,
+            "siem_mode": self.config.siem_mode,
             "splunk_host": self.config.splunk_host,
             "tenant_id": self.config.tenant_id,
             "last_poll": self._last_poll.isoformat() if self._last_poll else None,

@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 from .auth import TenantPrincipal, get_principal, require_admin
 from .config import DetectionEngineConfig, get_config
 from .coverage import build_coverage_report
+from .marketplace_store import MarketplaceStore, serialize_listing
 from .performance import PerformanceAggregator, aggregate_for_detection
 from .registry_sync import sync_manifest_to_store
 from .store import DetectionStore
@@ -63,6 +64,7 @@ class SignalRecordRequest(BaseModel):
 # ── lifespan / state ──────────────────────────────────────────────────────────
 
 _store: Optional[DetectionStore] = None
+_market: Optional[MarketplaceStore] = None
 _config: Optional[DetectionEngineConfig] = None
 _aggregator: Optional[PerformanceAggregator] = None
 
@@ -76,9 +78,10 @@ def _platform_tenant(cfg: DetectionEngineConfig) -> UUID:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _config, _aggregator
+    global _store, _market, _config, _aggregator
     _config = get_config()
     _store = await DetectionStore.from_dsn(_config.database_url)
+    _market = MarketplaceStore(_store.pool)
 
     compiled_path = Path(_config.detections_compiled_path).resolve()
     yaml_path = Path(_config.detections_yaml_path).resolve()
@@ -95,6 +98,11 @@ async def lifespan(app: FastAPI):
         # Sync is best-effort; service can still serve queries against existing
         # rows if the manifest is unreadable.
         logger.warning("detection_engine.startup_sync_failed", error=str(e))
+
+    try:
+        await seed_curated_listings(_store, _market, platform_tenant)
+    except Exception as e:
+        logger.warning("detection_engine.curated_seed_failed", error=str(e))
 
     _aggregator = PerformanceAggregator(
         store=_store,
@@ -134,6 +142,43 @@ def get_store() -> DetectionStore:
     if _store is None:
         raise HTTPException(status_code=503, detail="Store not initialized")
     return _store
+
+
+def get_market() -> MarketplaceStore:
+    if _market is None:
+        raise HTTPException(status_code=503, detail="Marketplace not initialized")
+    return _market
+
+
+async def seed_curated_listings(
+    store: DetectionStore,
+    market: MarketplaceStore,
+    platform_tenant: UUID,
+) -> int:
+    """Promote each platform-tenant active detection into a curated listing.
+
+    Idempotent: existing listings are refreshed, not duplicated.
+    """
+    rows = await store.list_active_detections(platform_tenant)
+    written = 0
+    for r in rows:
+        if r.get("tenant_id") != platform_tenant:
+            continue
+        await market.upsert_listing(
+            detection_id=r["detection_id"],
+            publisher_tenant_id=platform_tenant,
+            name=r["detection_id"],
+            description=r.get("notes") or f"VIGIL curated detection — {r.get('att_ck_tactic')}",
+            att_ck_tactic=str(r.get("att_ck_tactic") or "unknown"),
+            att_ck_technique=str(r.get("att_ck_technique") or "unknown"),
+            yaml_content=r.get("yaml_content") or "",
+            version=r.get("version") or "1.0.0",
+            is_curated=True,
+        )
+        written += 1
+    if written:
+        logger.info("detection_engine.curated_listings_seeded", count=written)
+    return written
 
 
 def _tenant_uuid(principal: TenantPrincipal) -> UUID:
@@ -331,6 +376,161 @@ async def record_signal_internal(
         confidence_contribution=body.confidence_contribution,
     )
     return ok({"signal_id": str(signal_id)})
+
+
+# ── marketplace ───────────────────────────────────────────────────────────────
+
+
+class PublishRequest(BaseModel):
+    detection_id: str
+    description: Optional[str] = None
+
+
+@app.get("/marketplace")
+async def marketplace_browse(
+    tactic: Optional[str] = Query(None),
+    technique: Optional[str] = Query(None),
+    is_curated: Optional[bool] = Query(None),
+    search: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    market: MarketplaceStore = Depends(get_market),
+):
+    rows = await market.list_listings(
+        tactic=tactic, technique=technique, is_curated=is_curated,
+        search=search, limit=limit, offset=offset,
+    )
+    return ok([serialize_listing(r) for r in rows], count=len(rows))
+
+
+@app.get("/marketplace/stats")
+async def marketplace_stats(market: MarketplaceStore = Depends(get_market)):
+    return ok(await market.stats())
+
+
+@app.get("/marketplace/{listing_id}")
+async def marketplace_get(
+    listing_id: UUID,
+    market: MarketplaceStore = Depends(get_market),
+):
+    row = await market.get_listing(listing_id)
+    if row is None:
+        return err("Listing not found", code=404)
+    return ok(serialize_listing(row, include_yaml=True))
+
+
+@app.post("/marketplace/publish")
+async def marketplace_publish(
+    body: PublishRequest,
+    principal: TenantPrincipal = Depends(require_admin),
+    store: DetectionStore = Depends(get_store),
+    market: MarketplaceStore = Depends(get_market),
+):
+    tenant = _tenant_uuid(principal)
+    platform = _platform_tenant(get_config())
+    active = await store.get_active_version(body.detection_id, tenant, platform_tenant_id=platform)
+    if active is None:
+        return err("Detection not found in your library", code=404)
+    if not active.get("yaml_content"):
+        return err("Detection has no YAML to publish", code=400)
+
+    listing = await market.upsert_listing(
+        detection_id=body.detection_id,
+        publisher_tenant_id=tenant,
+        name=body.detection_id,
+        description=body.description,
+        att_ck_tactic=str(active.get("att_ck_tactic") or "unknown"),
+        att_ck_technique=str(active.get("att_ck_technique") or "unknown"),
+        yaml_content=active.get("yaml_content") or "",
+        version=str(active.get("version") or "1.0.0"),
+        is_curated=False,
+    )
+    logger.info(
+        "marketplace.published",
+        listing_id=str(listing["listing_id"]),
+        detection_id=body.detection_id,
+        publisher=str(tenant),
+    )
+    return ok(serialize_listing(listing))
+
+
+@app.post("/marketplace/{listing_id}/import")
+async def marketplace_import(
+    listing_id: UUID,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: DetectionStore = Depends(get_store),
+    market: MarketplaceStore = Depends(get_market),
+):
+    listing = await market.get_listing(listing_id)
+    if listing is None or listing.get("status") != "active":
+        return err("Listing not available", code=404)
+
+    tenant = _tenant_uuid(principal)
+    cfg = get_config()
+
+    compiled_spl: Optional[str] = None
+    compiled_kql: Optional[str] = None
+    compiled_eql: Optional[str] = None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{cfg.signal_translation_url.rstrip('/')}/compile",
+                json={
+                    "detection_id": listing["detection_id"],
+                    "yaml": listing["yaml_content"],
+                },
+            )
+            if resp.status_code < 400:
+                payload = resp.json()
+                # The compiler returns either {data: {...}} or the inner dict directly.
+                inner = payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+                if isinstance(inner, dict):
+                    compiled_spl = inner.get("compiled_spl") or inner.get("spl")
+                    compiled_kql = inner.get("compiled_kql") or inner.get("kql")
+                    compiled_eql = inner.get("compiled_eql") or inner.get("eql")
+    except Exception as e:
+        logger.warning("marketplace.compile_failed", error=str(e))
+
+    await store.upsert_version(
+        detection_id=listing["detection_id"],
+        version=str(listing["version"]),
+        yaml_content=listing["yaml_content"],
+        compiled_spl=compiled_spl,
+        compiled_kql=compiled_kql,
+        compiled_eql=compiled_eql,
+        att_ck_tactic=listing["att_ck_tactic"],
+        att_ck_technique=listing["att_ck_technique"],
+        state_impact={},
+        tenant_id=tenant,
+        notes=f"Imported from marketplace listing {listing_id}",
+    )
+
+    import_row = await market.record_import(
+        listing_id=listing_id,
+        importing_tenant_id=tenant,
+        local_detection_id=listing["detection_id"],
+    )
+    refreshed = await market.get_listing(listing_id)
+    return ok(
+        {
+            "listing": serialize_listing(refreshed) if refreshed else None,
+            "import_id": str(import_row["import_id"]),
+            "local_detection_id": import_row.get("local_detection_id"),
+        }
+    )
+
+
+@app.delete("/marketplace/{listing_id}")
+async def marketplace_withdraw(
+    listing_id: UUID,
+    principal: TenantPrincipal = Depends(require_admin),
+    market: MarketplaceStore = Depends(get_market),
+):
+    tenant = _tenant_uuid(principal)
+    row = await market.withdraw_listing(listing_id=listing_id, publisher_tenant_id=tenant)
+    if row is None:
+        return err("Listing not found or not owned by tenant", code=404)
+    return ok(serialize_listing(row))
 
 
 # ── serializers ───────────────────────────────────────────────────────────────

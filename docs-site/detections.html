@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Detections</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html">Architecture</a>
+      <a href="detections.html" class="active">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Detections</h1>
+    <p class="lead">YAML is the source of truth. Compiled artifacts under <code>detections/compiled/</code> are auto-generated — never hand-edit.</p>
+
+    <h2>Anatomy of a detection</h2>
+<pre><code>id: D1
+name: Brute force credential access
+attack:
+  tactic: credential-access
+  technique_id: T1110
+state_impact:
+  phase: credential-access
+  status: Suspected
+  confidence_contribution: 0.4
+detection_logic:
+  type: threshold
+  field: user
+  count: 5
+  window: 5m
+fields:
+  - source.ip
+  - user.name
+  - event.outcome</code></pre>
+
+    <h2>Platform detections (D1–D4)</h2>
+    <table>
+      <thead><tr><th>ID</th><th>Tactic</th><th>Technique</th><th>What it catches</th></tr></thead>
+      <tbody>
+        <tr><td>D1</td><td>Credential Access</td><td>T1110</td><td>Brute-force login attempts</td></tr>
+        <tr><td>D2</td><td>Credential Access</td><td>T1003</td><td>LSASS / credential dumping</td></tr>
+        <tr><td>D3</td><td>Lateral Movement</td><td>T1021</td><td>Suspicious SMB activity</td></tr>
+        <tr><td>D4</td><td>Lateral Movement</td><td>T1075</td><td>Pass-the-hash patterns</td></tr>
+      </tbody>
+    </table>
+
+    <h2>CLI usage</h2>
+<pre><code># Validate every YAML file in detections/yaml/
+python -m signal_translation.cli validate
+
+# Compile to all backends + write the manifest
+python -m signal_translation.cli compile
+
+# Generate ATT&amp;CK coverage report
+python -m signal_translation.cli coverage</code></pre>
+
+    <h2>Detection lifecycle</h2>
+    <ol>
+      <li>Branch and edit YAML under <code>detections/yaml/</code>.</li>
+      <li>Open a PR — CI validates schema, ATT&amp;CK mapping, and recompiles.</li>
+      <li>On merge, <code>detections/compiled/manifest.json</code> updates and the detection-engine seeds a new active version on next startup.</li>
+      <li>Per-tenant overrides ride on top — a tenant can ship an override that wins over the platform version, then roll back.</li>
+    </ol>
+
+    <h2>Marketplace</h2>
+    <p>Tenants can publish their detections to a shared marketplace and import others. VIGIL staff publish under <code>is_curated=true</code>; tenants browse, filter by ATT&amp;CK tactic, and import with one click. Imports are deduplicated per (tenant, listing) and increment a download counter for the publisher.</p>
+  </main>
+</div>
+</body>
+</html>

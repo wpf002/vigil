@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VIGIL — Architecture</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<button class="hamburger" onclick="document.querySelector('.sidebar').classList.toggle('open')"><span></span><span></span><span></span></button>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand"><span class="dot"></span><span class="text">VIGIL</span></div>
+    <nav class="nav">
+      <a href="index.html">Overview</a>
+      <a href="getting-started.html">Getting Started</a>
+      <a href="architecture.html" class="active">Architecture</a>
+      <a href="detections.html">Detections</a>
+      <a href="api-reference.html">API Reference</a>
+      <a href="sdk.html">Python SDK</a>
+      <a href="compliance.html">Compliance</a>
+      <a href="competitive.html">Competitive</a>
+    </nav>
+  </aside>
+
+  <main>
+    <h1>Architecture</h1>
+    <p class="lead">Eleven services, one Postgres, one Kafka, one Redis, one Temporal cluster, one Elasticsearch.</p>
+
+    <h2>Service map</h2>
+    <table>
+      <thead><tr><th>Service</th><th>Port</th><th>Role</th></tr></thead>
+      <tbody>
+        <tr><td>api</td><td>8000</td><td>Auth, RBAC, API keys, webhooks, audit log</td></tr>
+        <tr><td>ingestor</td><td>8001</td><td>SIEM connectors → Kafka producer</td></tr>
+        <tr><td>attack-state-engine</td><td>8002</td><td>AttackState persistence, confidence scoring</td></tr>
+        <tr><td>correlation-engine</td><td>8003</td><td>Kafka consumer → entity graph correlation</td></tr>
+        <tr><td>signal-translation</td><td>8004</td><td>YAML → SPL/KQL/EQL compilation</td></tr>
+        <tr><td>detection-engine</td><td>8005</td><td>Versioning, performance, marketplace</td></tr>
+        <tr><td>ai-engine</td><td>8006</td><td>Claude narrative generation</td></tr>
+        <tr><td>playbook-engine</td><td>8007</td><td>Temporal-backed response orchestration</td></tr>
+        <tr><td>analyst-portal</td><td>8008</td><td>Escalation queue, SLA, shifts (VIGIL staff)</td></tr>
+        <tr><td>reporting</td><td>8009</td><td>Executive dashboard, compliance evidence</td></tr>
+        <tr><td>frontend</td><td>5173</td><td>React SPA</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Data flow</h2>
+<pre><code>SIEM (Splunk / Sentinel / Elastic)
+   │
+   ▼
+ingestor ──► kafka: vigil.signals.raw ──► correlation-engine
+                                              │
+                                              ▼
+                                    attack-state-engine ◄── ai-engine (PATCH narrative)
+                                              │
+                                              │ kafka: vigil.attacks.{created,updated,escalated}
+                                              ▼
+                              playbook-engine + analyst-portal + webhooks
+                                              │
+                                              ▼
+                                  XSOAR / Tines (SOAR backend)</code></pre>
+
+    <h2>Kafka topics</h2>
+    <table>
+      <thead><tr><th>Topic</th><th>Producer</th><th>Consumer</th></tr></thead>
+      <tbody>
+        <tr><td>vigil.signals.raw</td><td>ingestor</td><td>correlation-engine</td></tr>
+        <tr><td>vigil.attacks.created</td><td>correlation-engine</td><td>ai-engine, analyst-portal, webhook-dispatcher</td></tr>
+        <tr><td>vigil.attacks.updated</td><td>correlation-engine</td><td>ai-engine, analyst-portal, webhook-dispatcher</td></tr>
+        <tr><td>vigil.attacks.escalated</td><td>correlation-engine</td><td>playbook-engine, analyst-portal, webhook-dispatcher</td></tr>
+        <tr><td>vigil.playbooks.paused</td><td>playbook-engine</td><td>analyst-portal, webhook-dispatcher</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Confidence formula</h2>
+    <p>The attack-state engine scores progression deterministically:</p>
+<pre><code>confidence = (confirmed × 0.50) + (supporting × 0.20) + (progression × 0.30)
+escalate         when confidence ≥ 0.70
+escalate (page)  when confidence ≥ 0.85</code></pre>
+  </main>
+</div>
+</body>
+</html>
