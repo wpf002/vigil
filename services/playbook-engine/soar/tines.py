@@ -7,6 +7,7 @@ the user's Tines story is expected to consume.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, Optional
 

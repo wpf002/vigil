@@ -7,12 +7,14 @@ No ORM — queries are bespoke for the JSONB payload shape.
 """
 
 from __future__ import annotations
+
 import json
 from typing import Any, Optional
 from uuid import UUID
 
 import asyncpg
 import structlog
+
 from .models.attack_state import (
     AttackState,
     AttackStateStatus,

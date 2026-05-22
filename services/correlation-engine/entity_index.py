@@ -8,6 +8,7 @@ Keys (all prefixed by tenant_id for isolation):
 """
 
 from __future__ import annotations
+
 import asyncio
 import secrets
 from contextlib import asynccontextmanager

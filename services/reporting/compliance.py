@@ -6,6 +6,7 @@ data — only counts, lists of users + roles, and detection-version metadata.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID

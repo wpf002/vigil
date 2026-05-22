@@ -6,6 +6,7 @@ without requiring a live PostgreSQL. The asyncpg pool/connection are mocked.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -23,7 +24,6 @@ from attack_state_engine.models.attack_state import (
     PhaseStatus,
 )
 from attack_state_engine.store import AttackStateStore, _deserialize_state, _serialize_state
-
 
 TENANT_ID = "test-tenant"
 

@@ -6,6 +6,7 @@ test the user can iterate on until it succeeds.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 import os
@@ -18,7 +19,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
-from .auth_routes import require_admin, require_user, get_store
+from .auth_routes import get_store, require_admin, require_user
 from .user_store import UserRow, UserStore
 
 logger = structlog.get_logger(__name__)

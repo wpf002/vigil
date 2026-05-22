@@ -1,6 +1,7 @@
 """JWT access tokens and opaque refresh tokens."""
 
 from __future__ import annotations
+
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone

@@ -5,6 +5,7 @@ same dev-only X-Tenant-Id bypass gated on ENVIRONMENT=development.
 """
 
 from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from typing import Optional

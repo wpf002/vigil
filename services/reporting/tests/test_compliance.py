@@ -10,6 +10,7 @@ Mocks httpx + asyncpg. Coverage:
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime, timedelta, timezone
@@ -23,7 +24,6 @@ from reporting.aggregator import Aggregator
 from reporting.cache import TenantCache
 from reporting.compliance import ComplianceAssembler
 from reporting.scheduler import SnapshotScheduler
-
 
 # ── stub httpx client ─────────────────────────────────────────────────────
 

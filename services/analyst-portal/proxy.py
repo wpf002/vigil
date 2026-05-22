@@ -6,6 +6,7 @@ in analyst_actions instead of mutating the customer-owned state.
 """
 
 from __future__ import annotations
+
 from typing import Any, Optional
 
 import httpx

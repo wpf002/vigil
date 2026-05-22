@@ -10,6 +10,7 @@ asyncpg and the signal-translation HTTP call are both mocked. Coverage:
 """
 
 from __future__ import annotations
+
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -17,7 +18,6 @@ from uuid import UUID, uuid4
 import pytest
 
 from detection_engine.marketplace_store import MarketplaceStore, serialize_listing
-
 
 # ── shared fakes ──────────────────────────────────────────────────────────────
 

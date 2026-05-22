@@ -11,6 +11,7 @@ httpx is mocked — no live SOAR calls. Coverage:
 """
 
 from __future__ import annotations
+
 import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -20,7 +21,6 @@ import pytest
 
 from playbook_engine.soar.tines import TinesClient, TinesError
 from playbook_engine.soar.xsoar import XSOARClient, XSOARError
-
 
 # ── XSOAR ────────────────────────────────────────────────────────────────
 

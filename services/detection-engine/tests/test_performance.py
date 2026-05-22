@@ -5,6 +5,7 @@ behavior described in the Phase 3 spec.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -12,14 +13,13 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from detection_engine.coverage import build_coverage_report, MITRE_TACTICS
+from detection_engine.coverage import MITRE_TACTICS, build_coverage_report
 from detection_engine.performance import (
     PerformanceAggregator,
     aggregate_all,
     aggregate_for_detection,
     compute_fp_rate,
 )
-
 
 # ── compute_fp_rate ───────────────────────────────────────────────────────────
 

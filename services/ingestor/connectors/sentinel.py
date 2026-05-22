@@ -6,6 +6,7 @@ so a fleet of pods doesn't hammer the token endpoint.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Any, Optional
 

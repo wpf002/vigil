@@ -1,0 +1,33 @@
+{
+  // Open this file (File > Open Workspace from File…) for warning-free editing:
+  // each service folder is its own root and uses its own .venv interpreter,
+  // so Pylance resolves imports per-service instead of guessing one interpreter
+  // for the whole monorepo.
+  "folders": [
+    { "name": "frontend", "path": "frontend" },
+    { "name": "ai-engine", "path": "services/ai-engine" },
+    { "name": "analyst-portal", "path": "services/analyst-portal" },
+    { "name": "api", "path": "services/api" },
+    { "name": "attack-state-engine", "path": "services/attack-state-engine" },
+    { "name": "correlation-engine", "path": "services/correlation-engine" },
+    { "name": "detection-engine", "path": "services/detection-engine" },
+    { "name": "ingestor", "path": "services/ingestor" },
+    { "name": "playbook-engine", "path": "services/playbook-engine" },
+    { "name": "reporting", "path": "services/reporting" },
+    { "name": "signal-translation", "path": "services/signal-translation" },
+    { "name": "↩ repo root", "path": "." }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+    "isort.args": ["--profile", "black", "--line-length", "100"],
+    "[python]": {
+      "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+      }
+    },
+    "search.exclude": {
+      "**/.venv": true,
+      "**/node_modules": true
+    }
+  }
+}

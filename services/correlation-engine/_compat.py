@@ -11,6 +11,7 @@ time, so this module is safe to load under either runtime.
 """
 
 from __future__ import annotations
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -42,6 +43,12 @@ _register_pkg("attack_state_engine", "attack-state-engine")
 _register_pkg("ingestor", "ingestor")
 
 
+from attack_state_engine.engine.confidence import (  # noqa: E402
+    ESCALATION_THRESHOLD,
+    PHASE_ORDER,
+    ConfidenceEngine,
+)
+
 # Re-export the symbols the rest of the service needs.
 from attack_state_engine.models.attack_state import (  # noqa: E402
     AttackState,
@@ -54,11 +61,6 @@ from attack_state_engine.models.attack_state import (  # noqa: E402
     PhaseState,
     PhaseStatus,
     ResponseAction,
-)
-from attack_state_engine.engine.confidence import (  # noqa: E402
-    ConfidenceEngine,
-    ESCALATION_THRESHOLD,
-    PHASE_ORDER,
 )
 from attack_state_engine.store import AttackStateStore  # noqa: E402
 from ingestor.models.cdm import CDMEvent  # noqa: E402

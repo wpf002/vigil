@@ -5,6 +5,7 @@ so consumers (correlation engine, control plane) don't need to re-parse YAML.
 """
 
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any

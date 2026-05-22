@@ -6,6 +6,7 @@ the workflow code itself runs alongside this app — see run.py.
 """
 
 from __future__ import annotations
+
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -105,7 +106,7 @@ def _tenant_uuid(principal: TenantPrincipal) -> UUID:
     try:
         return UUID(principal.tenant_id)
     except (ValueError, TypeError):
-        from uuid import uuid5, NAMESPACE_DNS
+        from uuid import NAMESPACE_DNS, uuid5
         return uuid5(NAMESPACE_DNS, principal.tenant_id)
 
 

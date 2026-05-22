@@ -6,6 +6,7 @@ XSOAR playbooks can route on it. Returns the XSOAR-assigned incident id.
 """
 
 from __future__ import annotations
+
 from typing import Any, Optional
 
 import httpx

@@ -8,6 +8,7 @@ Runs as a single asyncio task launched from the FastAPI lifespan.
 """
 
 from __future__ import annotations
+
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional

@@ -1,8 +1,11 @@
 """Normalizer unit tests — no live Splunk or Kafka required."""
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
+
 import pytest
+
 from ..models.cdm import AlertStatus, EventCategory, Severity, SplunkCoreAlert, SplunkNotableEvent
 from ..normalizer.normalizer import EventNormalizer
 

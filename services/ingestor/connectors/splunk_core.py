@@ -6,8 +6,11 @@ Polls triggered alerts and manages VIGIL-owned saved searches.
 """
 
 from __future__ import annotations
+
 from typing import Any, Optional
+
 import structlog
+
 from ..models.cdm import SplunkCoreAlert
 from .splunk_base import SplunkBaseConnector
 

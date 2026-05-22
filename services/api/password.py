@@ -7,6 +7,7 @@ incompatibility with bcrypt 4.x (its wrap-bug detection trips bcrypt's new
 """
 
 from __future__ import annotations
+
 import re
 import secrets
 import string

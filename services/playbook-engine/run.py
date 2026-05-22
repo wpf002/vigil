@@ -7,6 +7,7 @@ Runs three coroutines under asyncio.gather():
 """
 
 from __future__ import annotations
+
 import asyncio
 import importlib.util
 import sys
@@ -34,7 +35,10 @@ _register("playbook_engine", _HERE)
 
 
 async def _main() -> None:
+    import socket
+
     import uvicorn  # noqa: E402
+
     from playbook_engine.config import get_config  # noqa: E402
     from playbook_engine.consumer import EscalationConsumer  # noqa: E402
     from playbook_engine.store import PlaybookStore  # noqa: E402
@@ -42,11 +46,15 @@ async def _main() -> None:
 
     cfg = get_config()
 
-    # API server.
+    # API server. Railway: the public edge reaches us over IPv4 while
+    # *.railway.internal private DNS is IPv6, so bind a single dual-stack
+    # socket (IPV6_V6ONLY=0) that serves both families on cfg.port.
+    _sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+    _sock.bind(("::", cfg.port))
     api_config = uvicorn.Config(
         "playbook_engine.main:app",
-        host="0.0.0.0",
-        port=cfg.port,
         reload=False,
         log_level=cfg.log_level.lower(),
     )
@@ -77,7 +85,7 @@ async def _main() -> None:
             await store.close()
 
     await asyncio.gather(
-        api_server.serve(),
+        api_server.serve(sockets=[_sock]),
         run_worker(cfg),
         consumer_task(),
         return_exceptions=False,

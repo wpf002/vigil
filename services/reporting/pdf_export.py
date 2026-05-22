@@ -5,6 +5,7 @@ Uses ReportLab Platypus so the layout adapts to evidence size automatically
 """
 
 from __future__ import annotations
+
 import io
 from datetime import datetime
 from typing import Any
@@ -21,7 +22,6 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-
 
 # VIGIL palette mapped to ReportLab colors.
 COLOR_BG = colors.HexColor("#0a0a0a")

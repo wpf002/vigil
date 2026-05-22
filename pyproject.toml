@@ -1,0 +1,22 @@
+# Repo-wide tool configuration for the VIGIL Python services.
+# This file holds *tool config only* — the repo is not a single installable
+# package; each service under services/<name> manages its own deps + venv.
+
+[tool.isort]
+profile = "black"
+line_length = 100
+# Treat each service package as first-party so its own modules sort into the
+# local-imports group rather than third-party.
+known_first_party = [
+    "ai_engine",
+    "analyst_portal",
+    "api",
+    "attack_state_engine",
+    "correlation_engine",
+    "detection_engine",
+    "ingestor",
+    "playbook_engine",
+    "reporting",
+    "signal_translation",
+]
+skip_glob = ["**/.venv/*", "**/node_modules/*"]

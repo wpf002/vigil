@@ -5,6 +5,7 @@ to the narrator. Handles cache lookups, API errors, and PATCH writes.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
@@ -16,7 +17,7 @@ from kafka import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 
 from .cache import NarrativeCache
-from .narrator import Narrator, NarrativeResult
+from .narrator import NarrativeResult, Narrator
 
 logger = structlog.get_logger(__name__)
 

@@ -1,6 +1,7 @@
 """Tests for the Elastic connector — httpx is mocked."""
 
 from __future__ import annotations
+
 import base64
 from datetime import datetime, timezone
 from typing import Any

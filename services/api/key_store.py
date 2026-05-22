@@ -8,8 +8,9 @@ Webhooks: HMAC secret stored verbatim and never returned after creation.
 """
 
 from __future__ import annotations
-import hmac
+
 import hashlib
+import hmac
 import secrets
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,7 +18,6 @@ from typing import Optional
 from uuid import UUID
 
 import asyncpg
-
 
 KEY_PREFIX_LITERAL = "vgl_"
 

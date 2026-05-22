@@ -8,6 +8,7 @@ The system prompt is reused across calls and is exactly cacheable
 """
 
 from __future__ import annotations
+
 import json
 from dataclasses import dataclass
 from typing import Any, Optional

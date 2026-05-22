@@ -1,6 +1,7 @@
 """Launcher for the reporting service."""
 
 from __future__ import annotations
+
 import importlib.util
 import sys
 from pathlib import Path
@@ -28,12 +29,24 @@ _register("reporting", _HERE)
 
 if __name__ == "__main__":
     import uvicorn
+
     from reporting.config import get_config
 
     cfg = get_config()
-    uvicorn.run(
-        "reporting.main:app",
-        host="0.0.0.0",
-        port=cfg.port,
-        log_level=cfg.log_level.lower(),
+    import socket
+
+    # Railway: the public edge reaches us over IPv4 while *.railway.internal
+    # private DNS is IPv6, so bind a single dual-stack socket (IPV6_V6ONLY=0)
+    # that serves both families on cfg.port.
+    _sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+    _sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    _sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+    _sock.bind(("::", cfg.port))
+    _server = uvicorn.Server(
+        uvicorn.Config(
+            "reporting.main:app",
+            reload=False,
+            log_level=cfg.log_level.lower(),
+        )
     )
+    _server.run(sockets=[_sock])

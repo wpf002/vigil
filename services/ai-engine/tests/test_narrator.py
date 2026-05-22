@@ -6,6 +6,7 @@ parse-error tolerance, and the output schema.
 """
 
 from __future__ import annotations
+
 import json
 from typing import Any
 from unittest.mock import MagicMock
@@ -14,11 +15,10 @@ import pytest
 
 from ai_engine.narrator import (
     SYSTEM_PROMPT,
-    Narrator,
     NarrativeResult,
+    Narrator,
     parse_response_text,
 )
-
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 

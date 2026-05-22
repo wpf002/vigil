@@ -7,6 +7,7 @@ Kafka, PostgreSQL, or Redis is required.
 """
 
 from __future__ import annotations
+
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
@@ -24,7 +25,6 @@ from correlation_engine._compat import (
     PhaseStatus,
 )
 from correlation_engine.handlers.signal_handler import SignalHandler
-
 
 TENANT = "test-tenant"
 

@@ -5,6 +5,7 @@ Registers the hyphenated directory as the importable Python package
 """
 
 from __future__ import annotations
+
 import importlib.util
 import sys
 from pathlib import Path

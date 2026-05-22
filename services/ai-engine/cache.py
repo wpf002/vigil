@@ -6,6 +6,7 @@ Key format: narrative:{attack_id}:{confidence_2dp}
 """
 
 from __future__ import annotations
+
 import json
 from typing import Optional
 

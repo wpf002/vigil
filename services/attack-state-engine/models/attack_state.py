@@ -6,10 +6,12 @@ not an alert. Every signal updates state — nothing creates a raw alert.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 from uuid import UUID, uuid4
+
 from pydantic import BaseModel, Field
 
 

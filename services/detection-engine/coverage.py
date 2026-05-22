@@ -5,8 +5,8 @@ beyond what the caller provides. Centralised so /coverage stays small.
 """
 
 from __future__ import annotations
-from typing import Any
 
+from typing import Any
 
 # 14 MITRE ATT&CK Enterprise tactics. Match strings used elsewhere in the
 # codebase (lower-kebab-case, see services/attack-state-engine/models/attack_state.py

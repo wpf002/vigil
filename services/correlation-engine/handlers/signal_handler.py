@@ -18,26 +18,27 @@ For each CDMEvent:
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Optional, Protocol
 from uuid import UUID, uuid4
 
 import structlog
 
+from .. import detections_registry
 from .._compat import (
+    ESCALATION_THRESHOLD,
     AttackState,
     AttackStateStatus,
     AttackStateStore,
     AttackStateTransition,
     CDMEvent,
     ConfidenceEngine,
-    ESCALATION_THRESHOLD,
     EvidenceItem,
     MITRETactic,
     PhaseState,
     PhaseStatus,
 )
-from .. import detections_registry
 from ..detection_engine_client import DetectionEngineClient
 from ..entity_index import EntityIndex
 

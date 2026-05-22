@@ -4,6 +4,7 @@ asyncpg, httpx, and Kafka are mocked. No live infrastructure.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -18,7 +19,6 @@ from analyst_portal.queue_consumer import (
 )
 from analyst_portal.sla_monitor import sweep_once
 from analyst_portal.store import deadline_for
-
 
 # ── pure helpers ──────────────────────────────────────────────────────────────
 

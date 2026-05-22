@@ -1,6 +1,7 @@
 """Test bootstrap for the reporting service."""
 
 from __future__ import annotations
+
 import importlib.util
 import sys
 from pathlib import Path

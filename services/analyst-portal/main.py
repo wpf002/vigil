@@ -5,6 +5,7 @@ Restricted to roles vigil_analyst and vigil_admin. End-customer roles
 """
 
 from __future__ import annotations
+
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -143,7 +144,7 @@ def _analyst_uuid(principal: StaffPrincipal) -> UUID:
     try:
         return UUID(principal.user_id)
     except (ValueError, TypeError):
-        from uuid import uuid5, NAMESPACE_DNS
+        from uuid import NAMESPACE_DNS, uuid5
         return uuid5(NAMESPACE_DNS, principal.user_id)
 
 

@@ -11,6 +11,7 @@ The events advance the pipeline by referencing real detection_ids
 """
 
 from __future__ import annotations
+
 import itertools
 import random
 from datetime import datetime, timezone

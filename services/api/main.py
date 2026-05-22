@@ -1,6 +1,7 @@
 """VIGIL Auth Service entrypoint."""
 
 from __future__ import annotations
+
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -10,10 +11,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .auth_routes import router as auth_router, webhook_router
+from .auth_routes import router as auth_router
+from .auth_routes import webhook_router
 from .config import APIConfig, get_config
 from .key_store import KeyStore
-from .onboarding_routes import router as onboarding_router, auth_me_router
+from .onboarding_routes import auth_me_router
+from .onboarding_routes import router as onboarding_router
 from .user_store import UserStore
 
 logger = structlog.get_logger(__name__)

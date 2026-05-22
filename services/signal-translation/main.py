@@ -5,6 +5,7 @@ and control plane can query coverage and trigger recompiles.
 """
 
 from __future__ import annotations
+
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any

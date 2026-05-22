@@ -13,11 +13,12 @@ Mocks the UserStore — no live database. Exercises:
 """
 
 from __future__ import annotations
+
 import asyncio
 import os
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID, uuid4
 
@@ -31,12 +32,11 @@ os.environ["DATABASE_URL"] = "postgresql://localhost/unused"
 os.environ["ENVIRONMENT"] = "test"
 
 from vigil_api import auth_routes
-from vigil_api.config import reset_config_for_tests, get_config
+from vigil_api.config import get_config, reset_config_for_tests
 from vigil_api.main import create_app
 from vigil_api.password import hash_password, verify_password
 from vigil_api.tokens import JWT_ALGORITHM, create_access_token
-from vigil_api.user_store import RefreshTokenRow, UserRow, TenantRow
-
+from vigil_api.user_store import RefreshTokenRow, TenantRow, UserRow
 
 # ── fake store ──────────────────────────────────────────────────────────────
 

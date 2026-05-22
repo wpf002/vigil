@@ -1,13 +1,13 @@
 """asyncpg-backed persistence for analyst-portal tables."""
 
 from __future__ import annotations
+
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from uuid import UUID
 
 import asyncpg
-
 
 SLA_TIER_MAP = {
     "critical": "sla_critical_minutes",

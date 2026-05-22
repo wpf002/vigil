@@ -6,10 +6,13 @@ and writes risk scores back to the Risk Index.
 """
 
 from __future__ import annotations
+
 from typing import Any, Optional
+
 import structlog
+
 from ..models.cdm import SplunkNotableEvent
-from .splunk_base import SplunkBaseConnector, SplunkAPIError
+from .splunk_base import SplunkAPIError, SplunkBaseConnector
 
 logger = structlog.get_logger(__name__)
 

@@ -6,6 +6,7 @@ row, and start a Temporal ResponseWorkflow.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from pathlib import Path
@@ -183,7 +184,7 @@ class EscalationConsumer:
             tenant_id = UUID(tenant_id_str)
         except (ValueError, TypeError):
             # Dev-mode tenants may be free-form strings; coerce deterministically.
-            from uuid import uuid5, NAMESPACE_DNS
+            from uuid import NAMESPACE_DNS, uuid5
             tenant_id = uuid5(NAMESPACE_DNS, tenant_id_str)
 
         phase = str(attack_state.get("current_phase") or "")

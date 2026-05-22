@@ -1,12 +1,20 @@
 """Tests for confidence scoring engine."""
 
 from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
+
 import pytest
+
+from attack_state_engine.engine.confidence import ESCALATION_THRESHOLD, ConfidenceEngine
 from attack_state_engine.models.attack_state import (
-    AttackState, EvidenceItem, ImpactLevel, Momentum, MITRETactic, PhaseStatus,
+    AttackState,
+    EvidenceItem,
+    ImpactLevel,
+    MITRETactic,
+    Momentum,
+    PhaseStatus,
 )
-from attack_state_engine.engine.confidence import ConfidenceEngine, ESCALATION_THRESHOLD
 
 TENANT_ID = "test-tenant"
 

@@ -5,6 +5,7 @@ injection so tests can swap a fake.
 """
 
 from __future__ import annotations
+
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import UUID
@@ -633,8 +634,10 @@ async def test_webhook_route(
 ):
     """Fire a test payload to the webhook URL. Returns the HTTP status code
     or an error string. Does not update last_fired_at — this is a probe."""
-    import httpx
     import json
+
+    import httpx
+
     from .key_store import hmac_sign
 
     wh = await keys.get_webhook(webhook_id=webhook_id, tenant_id=user.tenant_id)

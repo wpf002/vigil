@@ -1,6 +1,7 @@
 """Kafka publisher for AttackState lifecycle events."""
 
 from __future__ import annotations
+
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor

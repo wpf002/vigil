@@ -1,14 +1,17 @@
 """Kafka producer — publishes CDM events to vigil.signals.raw."""
 
 from __future__ import annotations
+
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 from uuid import UUID
+
 import structlog
 from kafka import KafkaProducer
 from kafka.errors import KafkaError, NoBrokersAvailable
+
 from ..models.cdm import CDMEvent
 
 logger = structlog.get_logger(__name__)

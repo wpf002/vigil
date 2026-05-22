@@ -6,6 +6,7 @@ All endpoints scope queries to the tenant_id derived from the JWT claim.
 """
 
 from __future__ import annotations
+
 import asyncio
 import random
 from contextlib import asynccontextmanager

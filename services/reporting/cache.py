@@ -6,6 +6,7 @@ service still responds with fresh data on cache failure.
 """
 
 from __future__ import annotations
+
 import json
 from typing import Any, Optional
 

@@ -9,11 +9,12 @@ config (sla_critical_minutes etc.).
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime, timezone
 from typing import Any, Optional
-from uuid import UUID, uuid5, NAMESPACE_DNS
+from uuid import NAMESPACE_DNS, UUID, uuid5
 
 import structlog
 from kafka import KafkaConsumer

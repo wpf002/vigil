@@ -15,9 +15,17 @@ Momentum:
 """
 
 from __future__ import annotations
-from datetime import datetime, timedelta, timezone
-from ..models.attack_state import AttackState, EvidenceItem, ImpactLevel, Momentum, MITRETactic, PhaseStatus
 
+from datetime import datetime, timedelta, timezone
+
+from ..models.attack_state import (
+    AttackState,
+    EvidenceItem,
+    ImpactLevel,
+    MITRETactic,
+    Momentum,
+    PhaseStatus,
+)
 
 # Weight constants — adjust to tune sensitivity
 CONFIRMED_SIGNAL_WEIGHT = 0.50

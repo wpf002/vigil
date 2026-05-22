@@ -5,14 +5,26 @@ Maps raw Splunk events to VIGIL CDM.
 """
 
 from __future__ import annotations
+
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
+
 import structlog
+
 from ..models.cdm import (
-    AlertStatus, CDMEvent, EventCategory, FileEntity, HostEntity,
-    MITREMapping, NetworkEntity, ProcessEntity, Severity,
-    SplunkCoreAlert, SplunkNotableEvent, UserEntity,
+    AlertStatus,
+    CDMEvent,
+    EventCategory,
+    FileEntity,
+    HostEntity,
+    MITREMapping,
+    NetworkEntity,
+    ProcessEntity,
+    Severity,
+    SplunkCoreAlert,
+    SplunkNotableEvent,
+    UserEntity,
 )
 
 logger = structlog.get_logger(__name__)

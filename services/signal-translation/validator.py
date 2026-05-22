@@ -6,6 +6,7 @@ authors don't have to fix them one at a time.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Any
 

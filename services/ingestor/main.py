@@ -6,19 +6,22 @@ publishes to vigil.signals.raw for the correlation engine.
 """
 
 from __future__ import annotations
+
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+
 import structlog
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
+
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
 from .connectors.sentinel import SentinelConnector
-from .connectors.splunk_base import SplunkConnectionError, SplunkAuthError
+from .connectors.splunk_base import SplunkAuthError, SplunkConnectionError
 from .connectors.splunk_core import SplunkCoreConnector
 from .connectors.splunk_es import SplunkESConnector
 from .models.cdm import CDMEvent, SIEMMode, SplunkMode

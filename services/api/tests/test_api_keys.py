@@ -6,6 +6,7 @@ dependency_overrides, so neither asyncpg nor httpx ever runs.
 """
 
 from __future__ import annotations
+
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -28,7 +29,6 @@ from vigil_api.key_store import (
     hmac_verify,
     verify_api_key,
 )
-
 
 # ── pure helpers ──────────────────────────────────────────────────────────
 

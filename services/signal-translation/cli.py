@@ -11,6 +11,7 @@ The script self-bootstraps the hyphenated directory as the importable
 """
 
 from __future__ import annotations
+
 import argparse
 import importlib.util
 import json

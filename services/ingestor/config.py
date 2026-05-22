@@ -1,5 +1,7 @@
 from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 from .models.cdm import SIEMMode, SplunkMode
 
 

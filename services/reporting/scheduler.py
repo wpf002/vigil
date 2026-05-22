@@ -7,6 +7,7 @@ exactly so a missed wake-up still picks up on the next cycle.
 """
 
 from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime, time, timedelta, timezone

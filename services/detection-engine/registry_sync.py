@@ -7,6 +7,7 @@ layer self-bootstrapping — analysts don't need to manually deploy D1–D4.
 """
 
 from __future__ import annotations
+
 import json
 from pathlib import Path
 from typing import Any, Optional

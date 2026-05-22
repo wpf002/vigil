@@ -9,6 +9,7 @@ httpx is mocked. Coverage:
 """
 
 from __future__ import annotations
+
 import os
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -22,7 +23,6 @@ os.environ.setdefault("DATABASE_URL", "postgresql://localhost/unused")
 os.environ.setdefault("ENVIRONMENT", "test")
 
 from vigil_api import onboarding_routes
-
 
 # ── _probe_splunk ────────────────────────────────────────────────────────
 

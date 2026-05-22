@@ -7,6 +7,7 @@ rest of the process.
 """
 
 from __future__ import annotations
+
 import asyncio
 from typing import Optional
 
@@ -33,8 +34,8 @@ async def _ensure_namespace(client: TemporalClient, namespace: str) -> None:
         pass
 
     try:
-        from temporalio.api.workflowservice.v1 import RegisterNamespaceRequest
         from google.protobuf.duration_pb2 import Duration
+        from temporalio.api.workflowservice.v1 import RegisterNamespaceRequest
         retention = Duration()
         retention.seconds = 86400 * 7  # 7 days
         await client.workflow_service.register_namespace(
