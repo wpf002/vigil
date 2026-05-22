@@ -1,0 +1,67 @@
+detection_id: D10-EXFIL-ALTERNATIVE-PROTOCOL
+name: Data Exfiltration over Alternative Protocol
+description: >
+  Detects large outbound data transfers over non-web protocols (DNS, ICMP,
+  raw TCP) to an external destination — a hallmark of staged exfiltration.
+  Opens or advances an exfiltration-phase AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: exfiltration
+  tactic_id: TA0010
+  technique: Exfiltration Over Alternative Protocol
+  technique_id: T1048
+  sub_technique: Exfiltration Over Unencrypted Non-C2 Protocol
+  sub_technique_id: T1048.003
+
+required_telemetry:
+  - source: zeek
+    event_id: conn
+    description: Connection logs with byte counts
+  - source: zeek
+    event_id: dns
+    description: DNS query logs
+
+state_impact:
+  transitions_to: exfiltration
+  status: Confirmed
+  confidence_contribution: 0.40
+  note: >
+    High-volume egress over DNS/ICMP to an external host strongly indicates
+    exfiltration; treated as Confirmed when paired with prior collection.
+  entities_extracted:
+    - type: host
+      field: src_ip
+    - type: ip
+      field: dest_ip
+
+logic:
+  abstraction: >
+    Outbound DNS or ICMP volume to a single external destination exceeding
+    1 MB in an hour, or anomalously long/encoded DNS query names.
+
+  splunk_spl: |
+    index=zeek (sourcetype=zeek:dns OR sourcetype=zeek:conn proto IN ("icmp","udp"))
+    | stats sum(orig_bytes) as bytes_out, count as events by src_ip, dest_ip
+    | where bytes_out > 1048576
+    | eval detection_id="D10-EXFIL-ALTERNATIVE-PROTOCOL"
+    | table src_ip, dest_ip, bytes_out, events
+
+  sentinel_kql: |
+    CommonSecurityLog
+    | where Protocol in ("DNS", "ICMP", "UDP")
+    | summarize bytes_out = sum(toint(SentBytes)), events = count() by SourceIP, DestinationIP, bin(TimeGenerated, 1h)
+    | where bytes_out > 1048576
+    | extend detection_id = "D10-EXFIL-ALTERNATIVE-PROTOCOL"
+
+  elastic_eql: |
+    network where network.transport in ("udp", "icmp") and
+      destination.bytes > 1048576 and not destination.ip == "127.0.0.1"
+
+severity: critical
+false_positive_risk: low
+notes: >
+  Backup-over-DNS is rare; most matches are genuine. Validate destination
+  reputation and correlate with a preceding collection-phase signal.

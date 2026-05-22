@@ -1,0 +1,70 @@
+detection_id: D8-DOMAIN-ACCOUNT-DISCOVERY
+name: Domain Account and Group Discovery
+description: >
+  Detects enumeration of domain accounts and groups via built-in tooling
+  (net.exe, dsquery, PowerShell AD cmdlets) in a short window — typical
+  post-compromise reconnaissance. Opens a discovery-phase AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: discovery
+  tactic_id: TA0007
+  technique: Account Discovery
+  technique_id: T1087.002
+  sub_technique: Domain Account
+  sub_technique_id: T1087.002
+
+required_telemetry:
+  - source: windows_security
+    event_id: 4688
+    description: Process creation with command line
+  - source: sysmon
+    event_id: 1
+    description: Process creation
+
+state_impact:
+  transitions_to: discovery
+  status: Observed
+  confidence_contribution: 0.25
+  note: >
+    Discovery tooling is dual-use; value comes from clustering several
+    enumeration commands from one host/user in a tight window.
+  entities_extracted:
+    - type: host
+      field: ComputerName
+    - type: user
+      field: SubjectUserName
+
+logic:
+  abstraction: >
+    Three or more discovery commands (net group /domain, net user /domain,
+    dsquery, Get-ADUser, Get-ADGroup) from the same host within 10 minutes.
+
+  splunk_spl: |
+    index=wineventlog EventCode=4688
+    | regex CommandLine="(?i)(net\s+(group|user)\s+/domain|dsquery|get-aduser|get-adgroup|net\s+localgroup)"
+    | bin _time span=10m
+    | stats count as cmd_count, values(CommandLine) as cmds by ComputerName, SubjectUserName, _time
+    | where cmd_count >= 3
+    | eval detection_id="D8-DOMAIN-ACCOUNT-DISCOVERY"
+    | table _time, ComputerName, SubjectUserName, cmd_count, cmds
+
+  sentinel_kql: |
+    SecurityEvent
+    | where EventID == 4688
+    | where CommandLine matches regex @"(?i)(net\s+(group|user)\s+/domain|dsquery|get-aduser|get-adgroup)"
+    | summarize cmd_count = count(), cmds = make_set(CommandLine) by Computer, SubjectUserName, bin(TimeGenerated, 10m)
+    | where cmd_count >= 3
+    | extend detection_id = "D8-DOMAIN-ACCOUNT-DISCOVERY"
+
+  elastic_eql: |
+    sequence by host.name with maxspan=10m
+      [process where process.args : ("/domain", "dsquery", "Get-ADUser", "Get-ADGroup")] with runs=3
+
+severity: medium
+false_positive_risk: high
+notes: >
+  Admins and inventory scripts run these legitimately. Strongest as a
+  discovery-phase amplifier alongside execution or credential-access signals.

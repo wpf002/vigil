@@ -7,7 +7,7 @@ import { PHASE_ORDER } from "@/types/attacks";
 import type { MITRETactic, Momentum } from "@/types/attacks";
 import { phaseLabel } from "@/lib/format";
 
-export function AttackList() {
+export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
   const filters = useAttackStore((s) => s.filters);
   const setPhaseFilter = useAttackStore((s) => s.setPhaseFilter);
   const setMomentumFilter = useAttackStore((s) => s.setMomentumFilter);
@@ -19,24 +19,36 @@ export function AttackList() {
     filters.momentum != null ||
     (filters.min_confidence ?? 0) > 0;
 
+  // On the Resolved (history) view, fetch resolved/contained attacks instead
+  // of the default active-only set.
+  const effectiveFilters = resolved
+    ? { ...filters, status: "all", limit: 200 }
+    : filters;
+
   const query = useQuery({
-    queryKey: ["attacks", filters],
-    queryFn: () => listAttacks(filters),
+    queryKey: ["attacks", resolved ? "history" : "active", effectiveFilters],
+    queryFn: () => listAttacks(effectiveFilters),
     refetchInterval: 30_000,
   });
 
-  const attacks = query.data ?? [];
+  const allResults = query.data ?? [];
+  const attacks = resolved
+    ? allResults.filter((a) => a.status !== "active")
+    : allResults;
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto">
       <div className="mb-5">
-        <h1 className="text-xl font-mono text-fg">Active Threats</h1>
+        <h1 className="text-xl font-mono text-fg">
+          {resolved ? "Resolved" : "Active Threats"}
+        </h1>
       </div>
 
-      <StatsBanner />
+      {!resolved && <StatsBanner />}
 
       <div className="mb-3 flex flex-wrap items-center gap-3 px-3 py-2 border border-border rounded bg-surface">
         <select
+          aria-label="Filter by attack phase"
           className="vigil-input py-1 text-xs"
           value={filters.phase ?? ""}
           onChange={(e) =>
@@ -52,6 +64,7 @@ export function AttackList() {
         </select>
 
         <select
+          aria-label="Filter by momentum"
           className="vigil-input py-1 text-xs"
           value={filters.momentum ?? ""}
           onChange={(e) =>
@@ -68,6 +81,7 @@ export function AttackList() {
           <span>Confidence ≥</span>
           <input
             type="range"
+            aria-label="Minimum confidence threshold"
             min={0}
             max={1}
             step={0.05}
@@ -104,7 +118,7 @@ export function AttackList() {
           Failed To Load Threats: {(query.error as Error).message}
         </div>
       ) : attacks.length === 0 ? (
-        <EmptyState filtersActive={filtersActive} onReset={resetFilters} />
+        <EmptyState filtersActive={filtersActive} onReset={resetFilters} resolved={resolved} />
       ) : (
         <ol className="space-y-1.5">
           {attacks.map((a) => (
@@ -121,9 +135,11 @@ export function AttackList() {
 function EmptyState({
   filtersActive,
   onReset,
+  resolved = false,
 }: {
   filtersActive: boolean;
   onReset: () => void;
+  resolved?: boolean;
 }) {
   if (filtersActive) {
     return (
@@ -136,6 +152,16 @@ function EmptyState({
         >
           Clear Filters
         </button>
+      </div>
+    );
+  }
+  if (resolved) {
+    return (
+      <div className="vigil-card p-12 text-center font-mono">
+        <div className="text-fg text-sm">No Resolved Attacks Yet.</div>
+        <div className="text-fg-muted text-xs mt-2 max-w-md mx-auto">
+          Attacks Appear Here Once They Are Contained Or Resolved.
+        </div>
       </div>
     );
   }

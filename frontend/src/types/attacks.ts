@@ -135,6 +135,7 @@ export interface AttackListFilters {
   phase?: MITRETactic | null;
   min_confidence?: number;
   momentum?: Momentum | null;
+  status?: string;
   limit?: number;
   offset?: number;
 }

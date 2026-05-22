@@ -1,0 +1,66 @@
+detection_id: D7-UAC-BYPASS-FODHELPER
+name: UAC Bypass via Fodhelper Registry Hijack
+description: >
+  Detects the fodhelper.exe auto-elevation UAC bypass, where an attacker
+  stages a hijack under HKCU\Software\Classes\ms-settings to run a payload
+  with elevated integrity. Opens a privilege-escalation AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: privilege-escalation
+  tactic_id: TA0004
+  technique: Abuse Elevation Control Mechanism
+  technique_id: T1548.002
+  sub_technique: Bypass User Account Control
+  sub_technique_id: T1548.002
+
+required_telemetry:
+  - source: sysmon
+    event_id: 13
+    description: Registry value set
+  - source: windows_security
+    event_id: 4688
+    description: Process creation
+
+state_impact:
+  transitions_to: privilege-escalation
+  status: Confirmed
+  confidence_contribution: 0.40
+  note: >
+    The ms-settings hijack pattern is highly specific to UAC bypass and is
+    treated as Confirmed on match.
+  entities_extracted:
+    - type: host
+      field: ComputerName
+    - type: user
+      field: SubjectUserName
+    - type: process
+      field: NewProcessName
+
+logic:
+  abstraction: >
+    fodhelper.exe spawning a child process while a registry value under
+    HKCU\Software\Classes\ms-settings\Shell\Open\command was recently written.
+
+  splunk_spl: |
+    index=sysmon EventCode=13 TargetObject="*\\ms-settings\\Shell\\Open\\command*"
+    | eval detection_id="D7-UAC-BYPASS-FODHELPER"
+    | table _time, ComputerName, SubjectUserName, TargetObject, Details
+
+  sentinel_kql: |
+    Sysmon
+    | where EventID == 13 and TargetObject contains @"\ms-settings\Shell\Open\command"
+    | extend detection_id = "D7-UAC-BYPASS-FODHELPER"
+    | project TimeGenerated, Computer, TargetObject, Details
+
+  elastic_eql: |
+    registry where registry.path : "*\\ms-settings\\Shell\\Open\\command*" and
+      registry.data.strings != null
+
+severity: critical
+false_positive_risk: low
+notes: >
+  Very low false positive rate — the ms-settings command hijack is rarely
+  legitimate. Treat matches as high priority.

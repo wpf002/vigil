@@ -132,6 +132,12 @@ export function ExecutiveDashboard() {
                   fontFamily: "monospace",
                   fontSize: 12,
                 }}
+                itemStyle={{ color: "#ffffff" }}
+                labelStyle={{ color: "#ffffff" }}
+                formatter={(value: number, name: string) => [
+                  `${value} active ${value === 1 ? "attack" : "attacks"}`,
+                  name,
+                ]}
               />
               <Legend
                 wrapperStyle={{ fontFamily: "monospace", fontSize: 10, color: "#9ca3af" }}
@@ -144,13 +150,19 @@ export function ExecutiveDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            MTTR Trend — 30d
+            MTTR Trend — 30d{" "}
+            <span className="text-fg-faint">(mean time to resolve, per day)</span>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={trend.data?.mttr_seconds ?? []}>
               <CartesianGrid stroke="#27272a" strokeDasharray="2 2" />
               <XAxis dataKey="date" stroke={FG_FAINT} fontSize={10} />
-              <YAxis stroke={FG_FAINT} fontSize={10} />
+              <YAxis
+                stroke={FG_FAINT}
+                fontSize={10}
+                width={44}
+                tickFormatter={(v: number) => formatDuration(v)}
+              />
               <Tooltip
                 contentStyle={{
                   background: "#121212",
@@ -158,6 +170,12 @@ export function ExecutiveDashboard() {
                   fontFamily: "monospace",
                   fontSize: 12,
                 }}
+                itemStyle={{ color: "#ffffff" }}
+                labelStyle={{ color: "#ffffff" }}
+                formatter={(value: number) => [
+                  formatDuration(value),
+                  "Avg time to resolve",
+                ]}
               />
               <Bar dataKey="value" fill={ACCENT} />
             </BarChart>
@@ -166,13 +184,20 @@ export function ExecutiveDashboard() {
 
         <div className="vigil-card p-4">
           <div className="text-[11px] font-mono text-fg-faint mb-3">
-            SLA Breach Rate — 30d
+            SLA Breach Rate — 30d{" "}
+            <span className="text-fg-faint">(% of attacks past their SLA)</span>
           </div>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={trend.data?.sla_breach_rate ?? []}>
               <CartesianGrid stroke="#27272a" strokeDasharray="2 2" />
               <XAxis dataKey="date" stroke={FG_FAINT} fontSize={10} />
-              <YAxis stroke={FG_FAINT} fontSize={10} />
+              <YAxis
+                stroke={FG_FAINT}
+                fontSize={10}
+                width={44}
+                domain={[0, 1]}
+                tickFormatter={(v: number) => `${Math.round(v * 100)}%`}
+              />
               <Tooltip
                 contentStyle={{
                   background: "#121212",
@@ -180,6 +205,12 @@ export function ExecutiveDashboard() {
                   fontFamily: "monospace",
                   fontSize: 12,
                 }}
+                itemStyle={{ color: "#ffffff" }}
+                labelStyle={{ color: "#ffffff" }}
+                formatter={(value: number) => [
+                  `${(value * 100).toFixed(0)}%`,
+                  "SLA breach rate",
+                ]}
               />
               <Line
                 type="monotone"

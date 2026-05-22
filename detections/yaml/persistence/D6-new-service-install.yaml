@@ -1,0 +1,68 @@
+detection_id: D6-NEW-SERVICE-INSTALL
+name: Suspicious Windows Service Installation
+description: >
+  Detects creation of a new Windows service pointing at an unusual binary
+  path or living in a user-writable directory — a common persistence and
+  privilege mechanism. Opens a persistence-phase AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: persistence
+  tactic_id: TA0003
+  technique: Create or Modify System Process
+  technique_id: T1543.003
+  sub_technique: Windows Service
+  sub_technique_id: T1543.003
+
+required_telemetry:
+  - source: windows_system
+    event_id: 7045
+    description: A new service was installed
+  - source: windows_security
+    event_id: 4697
+    description: A service was installed by the system
+
+state_impact:
+  transitions_to: persistence
+  status: Observed
+  confidence_contribution: 0.30
+  note: >
+    Service install from a temp/user path is high signal; combined with
+    prior execution it advances toward Confirmed persistence.
+  entities_extracted:
+    - type: host
+      field: ComputerName
+    - type: process
+      field: ImagePath
+    - type: user
+      field: SubjectUserName
+
+logic:
+  abstraction: >
+    New service whose binary path resolves under \Users\, \Temp\,
+    \ProgramData\, or \AppData\, or uses cmd/powershell as the service binary.
+
+  splunk_spl: |
+    index=wineventlog (EventCode=7045 OR EventCode=4697)
+    | regex ImagePath="(?i)\\\\(Users|Temp|ProgramData|AppData)\\\\|powershell|cmd\.exe"
+    | eval detection_id="D6-NEW-SERVICE-INSTALL"
+    | table _time, ComputerName, SubjectUserName, ServiceName, ImagePath
+
+  sentinel_kql: |
+    Event
+    | where EventID in (7045, 4697)
+    | where ServiceFileName matches regex @"(?i)\\(Users|Temp|ProgramData|AppData)\\|powershell|cmd\.exe"
+    | extend detection_id = "D6-NEW-SERVICE-INSTALL"
+    | project TimeGenerated, Computer, ServiceName, ServiceFileName
+
+  elastic_eql: |
+    registry where registry.path : "*\\Services\\*\\ImagePath" and
+      registry.data.strings : ("*\\Users\\*", "*\\Temp\\*", "*\\AppData\\*", "*powershell*")
+
+severity: high
+false_positive_risk: medium
+notes: >
+  Software installers and EDR agents legitimately create services. Allowlist
+  known publishers and signed binaries to cut noise.

@@ -39,6 +39,7 @@ export function App() {
               <Routes>
                 <Route path="/" element={<Navigate to="/attacks" replace />} />
                 <Route path="/attacks" element={<AttackList />} />
+                <Route path="/history" element={<AttackList resolved />} />
                 <Route path="/attacks/:id" element={<AttackDetail />} />
                 <Route path="/detections" element={<DetectionLibrary />} />
                 <Route path="/detections/:id" element={<DetectionDetail />} />

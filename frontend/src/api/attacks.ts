@@ -22,6 +22,7 @@ export async function listAttacks(
   if (filters.min_confidence !== undefined && filters.min_confidence > 0)
     params.min_confidence = filters.min_confidence;
   if (filters.momentum) params.momentum = filters.momentum;
+  if (filters.status) params.status = filters.status;
   params.limit = filters.limit ?? 50;
   params.offset = filters.offset ?? 0;
 

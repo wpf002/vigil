@@ -131,7 +131,11 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/1
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - ATTACK_STATE_ENGINE_URL=http://attack-state-engine:8002
+      # attack-state-engine runs on the host, not in compose. host.docker.internal
+      # resolves to the Docker host so narrative PATCHes can reach it.
+      - ATTACK_STATE_ENGINE_URL=http://host.docker.internal:8002
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8006:8006"
 

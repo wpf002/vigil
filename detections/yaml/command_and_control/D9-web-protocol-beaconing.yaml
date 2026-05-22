@@ -1,0 +1,68 @@
+detection_id: D9-WEB-PROTOCOL-BEACONING
+name: C2 Beaconing over Web Protocols
+description: >
+  Detects periodic, low-variance outbound HTTP/HTTPS connections to a single
+  destination consistent with command-and-control beaconing. Opens or
+  advances a command-and-control AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: command-and-control
+  tactic_id: TA0011
+  technique: Application Layer Protocol
+  technique_id: T1071.001
+  sub_technique: Web Protocols
+  sub_technique_id: T1071.001
+
+required_telemetry:
+  - source: zeek
+    event_id: http
+    description: HTTP connection logs
+  - source: firewall
+    event_id: traffic
+    description: Outbound connection records with bytes and timing
+
+state_impact:
+  transitions_to: command-and-control
+  status: Confirmed
+  confidence_contribution: 0.35
+  note: >
+    Regular beacon cadence to a rare external host is high signal; combined
+    with prior execution or persistence it confirms an active C2 channel.
+  entities_extracted:
+    - type: host
+      field: src_ip
+    - type: ip
+      field: dest_ip
+
+logic:
+  abstraction: >
+    A source host making >= 12 connections to one destination over an hour
+    with low jitter in inter-arrival time and small, similar request sizes.
+
+  splunk_spl: |
+    index=zeek sourcetype=zeek:http
+    | stats count as conns, avg(request_body_len) as avg_bytes, stdev(duration) as jitter
+      by src_ip, dest_ip
+    | where conns >= 12 AND jitter < 2.0
+    | eval detection_id="D9-WEB-PROTOCOL-BEACONING"
+    | table src_ip, dest_ip, conns, avg_bytes, jitter
+
+  sentinel_kql: |
+    CommonSecurityLog
+    | where ApplicationProtocol in ("http", "https")
+    | summarize conns = count(), jitter = stdev(todouble(SentBytes)) by SourceIP, DestinationIP, bin(TimeGenerated, 1h)
+    | where conns >= 12 and jitter < 2.0
+    | extend detection_id = "D9-WEB-PROTOCOL-BEACONING"
+
+  elastic_eql: |
+    sequence by source.ip, destination.ip with maxspan=1h
+      [network where network.protocol == "http"] with runs=12
+
+severity: high
+false_positive_risk: medium
+notes: >
+  Software update checks and telemetry agents also beacon. Allowlist known
+  SaaS/update endpoints and tune cadence thresholds per environment.

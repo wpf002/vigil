@@ -1,0 +1,68 @@
+detection_id: D5-POWERSHELL-ENCODED-COMMAND
+name: PowerShell Encoded Command Execution
+description: >
+  Detects PowerShell launched with an encoded command payload, a common
+  technique for obfuscating malicious execution. Opens or advances an
+  execution-phase AttackState.
+
+version: 1.0.0
+status: production
+
+att&ck:
+  tactic: execution
+  tactic_id: TA0002
+  technique: Command and Scripting Interpreter
+  technique_id: T1059.001
+  sub_technique: PowerShell
+  sub_technique_id: T1059.001
+
+required_telemetry:
+  - source: windows_security
+    event_id: 4688
+    description: Process creation with command line
+  - source: powershell
+    event_id: 4104
+    description: Script block logging
+
+state_impact:
+  transitions_to: execution
+  status: Observed
+  confidence_contribution: 0.30
+  note: >
+    Encoded command alone is suspicious but not conclusive; pairs with
+    downstream credential-access or C2 signals to reach Confirmed.
+  entities_extracted:
+    - type: host
+      field: ComputerName
+    - type: process
+      field: NewProcessName
+    - type: user
+      field: SubjectUserName
+
+logic:
+  abstraction: >
+    powershell.exe (or pwsh.exe) invoked with -EncodedCommand / -enc and a
+    base64 payload, optionally with -NoProfile / -WindowStyle Hidden.
+
+  splunk_spl: |
+    index=wineventlog EventCode=4688 (NewProcessName="*\\powershell.exe" OR NewProcessName="*\\pwsh.exe")
+    | regex CommandLine="(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{40,}"
+    | eval detection_id="D5-POWERSHELL-ENCODED-COMMAND"
+    | table _time, ComputerName, SubjectUserName, NewProcessName, CommandLine
+
+  sentinel_kql: |
+    SecurityEvent
+    | where EventID == 4688 and NewProcessName endswith "powershell.exe"
+    | where CommandLine matches regex @"(?i)\s-e(nc|ncodedcommand)?\s+[A-Za-z0-9+/=]{40,}"
+    | extend detection_id = "D5-POWERSHELL-ENCODED-COMMAND"
+    | project TimeGenerated, Computer, SubjectUserName, NewProcessName, CommandLine
+
+  elastic_eql: |
+    process where process.name in ("powershell.exe", "pwsh.exe") and
+      process.args : ("-enc*", "-EncodedCommand*", "-e*")
+
+severity: high
+false_positive_risk: medium
+notes: >
+  Some legitimate management tooling uses encoded commands. Baseline known
+  automation accounts before alerting at high severity.

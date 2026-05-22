@@ -96,7 +96,10 @@ class Aggregator:
             try:
                 resp = await client.get(
                     f"{self.attack_state_engine_url}/attacks",
-                    params={"limit": 200},
+                    # status=all so resolved/contained attacks are included —
+                    # MTTR and SLA-breach series are computed from resolved
+                    # attacks, which the default active-only view omits.
+                    params={"limit": 200, "status": "all"},
                     headers=self._headers(str(tenant_id), jwt),
                 )
                 if resp.status_code < 400:
