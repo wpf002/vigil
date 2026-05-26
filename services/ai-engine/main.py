@@ -35,12 +35,18 @@ class AIEngine:
         self._consumer_task: Optional[asyncio.Task] = None
 
     async def start(self) -> None:
-        if not self.config.anthropic_api_key:
+        if not self.config.anthropic_enabled:
+            logger.warning("ai_engine.anthropic_disabled — returning stub narratives")
+        elif not self.config.anthropic_api_key:
             logger.warning("ai_engine.no_api_key — narrator calls will fail")
 
         # Anthropic client is sync — narrator wraps it.
         client = Anthropic(api_key=self.config.anthropic_api_key or "missing")
-        self.narrator = Narrator(client=client, model=self.config.anthropic_model)
+        self.narrator = Narrator(
+            client=client,
+            model=self.config.anthropic_model,
+            enabled=self.config.anthropic_enabled,
+        )
 
         self.cache = await NarrativeCache.from_url(
             self.config.redis_url, self.config.narrative_cache_ttl_seconds
@@ -118,6 +124,13 @@ def create_app() -> FastAPI:
         if not attack_id:
             raise HTTPException(status_code=400, detail="attack_id required")
 
+        confidence = float(body.get("confidence") or 0.0)
+
+        cached = await _engine.cache.get(attack_id, confidence)
+        if cached is not None:
+            logger.info("ai_engine.manual_generate.cache_hit", attack_id=attack_id)
+            return cached
+
         loop = asyncio.get_event_loop()
         try:
             result = await loop.run_in_executor(None, _engine.narrator.generate, body)
@@ -125,21 +138,21 @@ def create_app() -> FastAPI:
             logger.warning("ai_engine.manual_generate.failed", error_type=type(e).__name__)
             raise HTTPException(status_code=502, detail="Narrative generation failed")
 
-        # PATCH the result back via the same path the consumer uses.
+        patch_body = result.to_patch_body()
+
         cfg = _engine.config
         url = f"{cfg.attack_state_engine_url.rstrip('/')}/attacks/{attack_id}/narrative"
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.patch(
                 url,
                 headers={"X-Internal-Key": cfg.internal_api_key},
-                json=result.to_patch_body(),
+                json=patch_body,
             )
             if resp.status_code >= 400:
                 raise HTTPException(status_code=502, detail=f"PATCH failed: {resp.status_code}")
 
-        confidence = float(body.get("confidence") or 0.0)
-        await _engine.cache.set(attack_id, confidence, result.to_patch_body())
-        return result.to_patch_body()
+        await _engine.cache.set(attack_id, confidence, patch_body)
+        return patch_body
 
     return app
 

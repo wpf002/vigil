@@ -187,4 +187,5 @@ def build_consumer(
         cache=cache,
         attack_state_url=cfg.attack_state_engine_url,
         internal_api_key=cfg.internal_api_key,
+        confidence_delta_skip=cfg.confidence_delta_skip,
     )

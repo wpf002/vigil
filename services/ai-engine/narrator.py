@@ -168,12 +168,28 @@ def parse_response_text(text: str) -> NarrativeResult:
     )
 
 
+def _stub_result(state: dict[str, Any]) -> NarrativeResult:
+    """Deterministic placeholder used when ANTHROPIC_ENABLED=false."""
+    phase = state.get("current_phase") or "unknown"
+    confidence = state.get("confidence") or 0.0
+    return NarrativeResult(
+        narrative=(
+            f"Narrative generation is disabled (ANTHROPIC_ENABLED=false). "
+            f"Attack is at phase '{phase}' with confidence {confidence:.2f}."
+        ),
+        predicted_next_phase=None,
+        analyst_summary="Re-enable the AI engine to get a model-generated summary.",
+        confidence_note=None,
+    )
+
+
 class Narrator:
     """Wraps an Anthropic client. Tests pass a mock client."""
 
-    def __init__(self, client, model: str):
+    def __init__(self, client, model: str, enabled: bool = True):
         self._client = client
         self._model = model
+        self._enabled = enabled
 
     def generate(self, state: dict[str, Any]) -> NarrativeResult:
         """Synchronous call (Anthropic Python SDK is sync). Caller may
@@ -184,6 +200,11 @@ class Narrator:
         clauses, similar quality at a fraction of the output tokens. Bump to
         ``"medium"`` if narrative quality regresses.
         """
+        if not self._enabled:
+            logger.info("ai_engine.narrator.disabled_stub_returned",
+                        attack_id=state.get("attack_id"))
+            return _stub_result(state)
+
         message = self._client.messages.create(
             model=self._model,
             max_tokens=1024,

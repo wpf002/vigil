@@ -23,7 +23,23 @@ class NarrativeCache:
 
     @classmethod
     async def from_url(cls, url: str, ttl_seconds: int) -> "NarrativeCache":
+        # Surface the effective DB index so deploys (e.g. Railway) where
+        # REDIS_URL omits a /N path can be diagnosed from startup logs.
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        path = (parsed.path or "").lstrip("/")
+        if not path:
+            logger.warning(
+                "narrative_cache.no_db_index_in_url",
+                hint="REDIS_URL has no /N path; defaulting to DB 0 (collides with other namespaces)",
+            )
         client = aioredis.from_url(url, encoding="utf-8", decode_responses=True)
+        try:
+            await client.ping()
+            logger.info("narrative_cache.connected", db=path or "0", ttl_seconds=ttl_seconds)
+        except Exception as e:
+            logger.warning("narrative_cache.ping_failed", error=str(e))
         return cls(client, ttl_seconds)
 
     async def close(self) -> None:
