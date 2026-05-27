@@ -15,6 +15,7 @@ import pytest
 
 from ai_engine.narrator import (
     SYSTEM_PROMPT,
+    CircuitOpen,
     NarrativeResult,
     Narrator,
     parse_response_text,
@@ -137,7 +138,10 @@ def test_narrator_returns_parsed_result():
 
 
 def test_narrator_request_shape():
-    """Lock down the request shape: system prompt + low-effort tuning."""
+    """Lock down the request shape: system prompt is set, no extra params
+    that the SDK would reject. (Earlier code passed output_config={effort:low}
+    — not a real Anthropic param — and every call 400'd.)
+    """
     client = _mock_client_returning(json.dumps({
         "narrative": "x", "predicted_next_phase": None,
         "analyst_summary": "y", "confidence_note": None,
@@ -147,7 +151,85 @@ def test_narrator_request_shape():
 
     kwargs = client.messages.create.call_args.kwargs
     assert kwargs["system"] == SYSTEM_PROMPT
-    assert kwargs["output_config"] == {"effort": "low"}
+    assert kwargs["model"] == "claude-sonnet-4-6"
+    assert kwargs["max_tokens"] == 1024
+    assert "output_config" not in kwargs
+
+
+def test_narrator_disabled_returns_stub_without_calling_client():
+    """Soft kill switch — no Claude call when enabled=False."""
+    client = MagicMock()
+    narrator = Narrator(client=client, model="claude-sonnet-4-6", enabled=False)
+    result = narrator.generate(_state())
+    assert isinstance(result, NarrativeResult)
+    assert "paused" in result.narrative.lower()
+    client.messages.create.assert_not_called()
+
+
+def test_circuit_breaker_trips_after_n_errors():
+    """After N consecutive errors, the breaker opens and further calls raise
+    CircuitOpen without ever touching the Anthropic client.
+    """
+    client = MagicMock()
+    client.messages.create.side_effect = RuntimeError("boom")
+    narrator = Narrator(
+        client=client, model="claude-sonnet-4-6", consecutive_error_limit=3
+    )
+
+    for _ in range(3):
+        with pytest.raises(RuntimeError):
+            narrator.generate(_state())
+
+    assert narrator.circuit_open is True
+    # Next call must NOT hit the client.
+    client.messages.create.reset_mock()
+    with pytest.raises(CircuitOpen):
+        narrator.generate(_state())
+    client.messages.create.assert_not_called()
+
+
+def test_circuit_breaker_resets_on_success():
+    """One good call clears the consecutive-error counter."""
+    client = MagicMock()
+    good = MagicMock()
+    good_block = MagicMock()
+    good_block.type = "text"
+    good_block.text = json.dumps({
+        "narrative": "x", "predicted_next_phase": None,
+        "analyst_summary": "y", "confidence_note": None,
+    })
+    good.content = [good_block]
+
+    client.messages.create.side_effect = [
+        RuntimeError("boom"),
+        RuntimeError("boom"),
+        good,
+    ]
+    narrator = Narrator(
+        client=client, model="claude-sonnet-4-6", consecutive_error_limit=3
+    )
+
+    for _ in range(2):
+        with pytest.raises(RuntimeError):
+            narrator.generate(_state())
+    assert narrator.consecutive_errors == 2
+
+    narrator.generate(_state())
+    assert narrator.consecutive_errors == 0
+    assert narrator.circuit_open is False
+
+
+def test_force_disable_and_enable():
+    client = MagicMock()
+    narrator = Narrator(client=client, model="claude-sonnet-4-6")
+    narrator.force_disable()
+    narrator.generate(_state())
+    client.messages.create.assert_not_called()
+
+    narrator.force_enable()
+    # Enabling resets the breaker too.
+    assert narrator.circuit_open is False
+    assert narrator.consecutive_errors == 0
 
 
 def test_narrator_truncates_evidence_to_20():

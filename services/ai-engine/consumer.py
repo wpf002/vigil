@@ -1,7 +1,8 @@
 """Kafka consumer for attack lifecycle events.
 
 Subscribes to vigil.attacks.{created,updated} and dispatches each payload
-to the narrator. Handles cache lookups, API errors, and PATCH writes.
+to the narrator. Handles cache lookups, the daily budget, API errors,
+and PATCH writes.
 """
 
 from __future__ import annotations
@@ -9,15 +10,16 @@ from __future__ import annotations
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import httpx
 import structlog
 from kafka import KafkaConsumer
-from kafka.errors import KafkaError, NoBrokersAvailable
+from kafka.errors import NoBrokersAvailable
 
+from .budget import CallBudget
 from .cache import NarrativeCache
-from .narrator import NarrativeResult, Narrator
+from .narrator import CircuitOpen, NarrativeResult, Narrator
 
 logger = structlog.get_logger(__name__)
 
@@ -31,6 +33,7 @@ class NarrativeConsumer:
         group_id: str,
         narrator: Narrator,
         cache: NarrativeCache,
+        budget: CallBudget,
         attack_state_url: str,
         internal_api_key: str,
         confidence_delta_skip: float = 0.05,
@@ -40,6 +43,7 @@ class NarrativeConsumer:
         self.group_id = group_id
         self._narrator = narrator
         self._cache = cache
+        self._budget = budget
         self._attack_state_url = attack_state_url.rstrip("/")
         self._internal_api_key = internal_api_key
         self._confidence_delta_skip = confidence_delta_skip
@@ -48,6 +52,7 @@ class NarrativeConsumer:
         self._stop = False
         self.processed = 0
         self.errors = 0
+        self.budget_blocks = 0
         self._executor = ThreadPoolExecutor(max_workers=2)
 
     def connect(self) -> None:
@@ -80,7 +85,6 @@ class NarrativeConsumer:
         self._stop = True
 
     async def run(self) -> None:
-        """Main loop. Polls Kafka in a thread, dispatches messages async."""
         if self._consumer is None:
             raise RuntimeError("Consumer not connected")
         loop = asyncio.get_event_loop()
@@ -107,8 +111,6 @@ class NarrativeConsumer:
         return flat
 
     async def _handle(self, payload: dict[str, Any]) -> None:
-        # vigil.attacks.created publishes the AttackState directly.
-        # vigil.attacks.updated wraps it in {state, transition}.
         state = payload.get("state") if isinstance(payload, dict) and "state" in payload else payload
         if not isinstance(state, dict) or not state.get("attack_id"):
             logger.warning("ai_engine.consumer.bad_payload")
@@ -117,7 +119,7 @@ class NarrativeConsumer:
         attack_id = str(state["attack_id"])
         confidence = float(state.get("confidence") or 0.0)
 
-        # Cache: skip if a near-confidence narrative was generated recently.
+        # Cache delta — first line of defense (free).
         latest = await self._cache.latest_confidence(attack_id)
         if latest is not None and abs(latest - confidence) < self._confidence_delta_skip:
             logger.info(
@@ -126,6 +128,26 @@ class NarrativeConsumer:
                 latest=latest,
                 current=confidence,
             )
+            return
+
+        # Daily budget — hard cap. Atomically reserve a call slot before we
+        # touch Claude. If the budget is exhausted we just drop the message:
+        # the consumer is a fire-and-forget pipeline, the next update will
+        # retry once tomorrow's UTC reset lands. The cached older narrative
+        # stays on the AttackState in the meantime.
+        allowed, count = await self._budget.try_consume()
+        if not allowed:
+            self.budget_blocks += 1
+            # Log loudly on the transition and then every 100th block so the
+            # cost-control event is impossible to miss but doesn't spam.
+            if self.budget_blocks == 1 or self.budget_blocks % 100 == 0:
+                logger.error(
+                    "ai_engine.consumer.budget_exhausted_skipping",
+                    attack_id=attack_id,
+                    count=count,
+                    limit=self._budget.limit,
+                    blocks_today=self.budget_blocks,
+                )
             return
 
         result = await self._call_narrator(state)
@@ -141,11 +163,15 @@ class NarrativeConsumer:
             return await loop.run_in_executor(
                 self._executor, self._narrator.generate, state
             )
+        except CircuitOpen:
+            # Already logged in narrator.generate. Don't double-log per call.
+            return None
         except Exception as e:
             logger.warning(
                 "ai_engine.narrator.failed",
                 attack_id=state.get("attack_id"),
                 error_type=type(e).__name__,
+                error=str(e)[:200],
             )
             return None
 
@@ -174,10 +200,12 @@ class NarrativeConsumer:
             )
 
 
-# Convenience factory for main.py.
-
 def build_consumer(
-    *, narrator: Narrator, cache: NarrativeCache, cfg
+    *,
+    narrator: Narrator,
+    cache: NarrativeCache,
+    budget: CallBudget,
+    cfg,
 ) -> NarrativeConsumer:
     return NarrativeConsumer(
         bootstrap_servers=cfg.kafka_bootstrap_servers,
@@ -185,6 +213,7 @@ def build_consumer(
         group_id=cfg.kafka_consumer_group,
         narrator=narrator,
         cache=cache,
+        budget=budget,
         attack_state_url=cfg.attack_state_engine_url,
         internal_api_key=cfg.internal_api_key,
         confidence_delta_skip=cfg.confidence_delta_skip,

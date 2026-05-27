@@ -19,13 +19,25 @@ class AIEngineConfig(BaseSettings):
     # calling Claude. Set ANTHROPIC_ENABLED=false in demo/Railway envs to cap spend.
     anthropic_enabled: bool = True
 
+    # Hard daily call budget — Redis-backed, atomic, auto-resets at UTC midnight.
+    # This is the load-bearing defense; the kill switch above is a soft toggle
+    # that can be defeated by an env-var slip or an out-of-date deploy.
+    # 0 disables Claude entirely (every call falls back to stub).
+    anthropic_daily_call_budget: int = 50
+
+    # Per-process consecutive-error trip — if Claude errors this many times in
+    # a row, this replica disables the narrator until restart. Stops the
+    # 30-second-poll-forever loop the moment something goes structurally wrong
+    # (auth, schema, quota).
+    anthropic_consecutive_error_limit: int = 5
+
     attack_state_engine_url: str = "http://localhost:8002"
     internal_api_key: str = "dev-internal-key-change-me"
 
     redis_url: str = "redis://localhost:6380/1"
     narrative_cache_ttl_seconds: int = 600
-    # Consumer skips a Claude call if a cached narrative exists within this
-    # confidence delta. Raise to absorb noisier demo data.
+    # Consumer skips a Claude call when a cached narrative for the same attack
+    # exists within this confidence delta. 0.15 absorbs typical demo progressions.
     confidence_delta_skip: float = 0.15
 
     kafka_bootstrap_servers: str = "localhost:9092"

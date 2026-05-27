@@ -3,8 +3,15 @@
 Reasons over a JSON-serialized AttackState; returns structured narrative
 fields suitable for PATCHing back to attack-state-engine.
 
-The system prompt is reused across calls and is exactly cacheable
-(prompt caching: ephemeral cache_control on the system block).
+Spend defenses (layered, fail-closed):
+  1. ``enabled`` flag (env kill switch) — softest gate, short-circuits to stub.
+  2. Async ``budget`` (Redis-backed, atomic) — hard daily cap, checked by
+     callers via ``budget.try_consume()`` BEFORE invoking ``generate()``.
+  3. In-process consecutive-error breaker — after N errors this replica
+     refuses to call Claude until restart, so an auth/quota fault can't
+     drive a 30-second-poll-forever billing loop.
+  4. ``max_retries=0`` on the Anthropic client (set in main.py) — the SDK
+     retries 2x by default, which silently triples cost on transient errors.
 """
 
 from __future__ import annotations
@@ -45,7 +52,6 @@ class NarrativeResult:
         }
 
 
-# Valid MITRE tactic strings — accepted values for predicted_next_phase.
 _VALID_TACTICS = {
     "reconnaissance",
     "resource-development",
@@ -71,7 +77,6 @@ def _trim_attack_state(state: dict[str, Any]) -> dict[str, Any]:
     Other large lists left intact — they're typically small.
     """
     evidence = state.get("evidence") or []
-    # Sort oldest-first by timestamp; keep last 20 chronological items.
     try:
         evidence_sorted = sorted(evidence, key=lambda e: e.get("timestamp") or "")
     except TypeError:
@@ -115,7 +120,6 @@ def _build_user_message(state: dict[str, Any]) -> str:
 def _strip_code_fences(text: str) -> str:
     s = text.strip()
     if s.startswith("```"):
-        # Remove an optional language tag and the closing fence.
         first_newline = s.find("\n")
         if first_newline != -1:
             s = s[first_newline + 1 :]
@@ -125,16 +129,11 @@ def _strip_code_fences(text: str) -> str:
 
 
 def parse_response_text(text: str) -> NarrativeResult:
-    """Parse the model's textual response into a NarrativeResult.
-
-    Tolerates common formatting issues (code fences, trailing prose) by
-    locating the first {...} JSON object.
-    """
+    """Parse the model's textual response into a NarrativeResult."""
     cleaned = _strip_code_fences(text)
     try:
         data = json.loads(cleaned)
     except json.JSONDecodeError:
-        # Fallback: scan for the first balanced JSON object.
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start == -1 or end == -1 or end <= start:
@@ -149,7 +148,6 @@ def parse_response_text(text: str) -> NarrativeResult:
     if predicted is not None:
         predicted = str(predicted)
         if predicted not in _VALID_TACTICS:
-            # Drop the invalid value rather than failing the whole record.
             predicted = None
 
     analyst_summary = str(data.get("analyst_summary") or "").strip()
@@ -168,59 +166,118 @@ def parse_response_text(text: str) -> NarrativeResult:
     )
 
 
-def _stub_result(state: dict[str, Any]) -> NarrativeResult:
-    """Deterministic placeholder used when ANTHROPIC_ENABLED=false."""
+def _stub_result(state: dict[str, Any], reason: str = "disabled") -> NarrativeResult:
+    """Deterministic placeholder. ``reason`` is surfaced to operators so they
+    can tell a kill-switch stub apart from a budget-exhausted stub apart from
+    a circuit-open stub.
+    """
     phase = state.get("current_phase") or "unknown"
     confidence = state.get("confidence") or 0.0
     return NarrativeResult(
         narrative=(
-            f"Narrative generation is disabled (ANTHROPIC_ENABLED=false). "
+            f"Narrative generation is paused ({reason}). "
             f"Attack is at phase '{phase}' with confidence {confidence:.2f}."
         ),
         predicted_next_phase=None,
-        analyst_summary="Re-enable the AI engine to get a model-generated summary.",
+        analyst_summary=f"Re-enable the AI engine ({reason}) to get a model-generated summary.",
         confidence_note=None,
     )
 
 
-class Narrator:
-    """Wraps an Anthropic client. Tests pass a mock client."""
+class CircuitOpen(Exception):
+    """Raised when the in-process error breaker has tripped."""
 
-    def __init__(self, client, model: str, enabled: bool = True):
+
+class Narrator:
+    """Wraps an Anthropic client. Tests pass a mock client.
+
+    The narrator owns its in-process circuit breaker. The async, cross-replica
+    daily budget lives in ``budget.py`` and is enforced by callers before they
+    invoke ``generate()`` (so the budget check can stay async without forcing
+    every caller through the synchronous SDK code path).
+    """
+
+    def __init__(
+        self,
+        client,
+        model: str,
+        enabled: bool = True,
+        consecutive_error_limit: int = 5,
+    ):
         self._client = client
         self._model = model
         self._enabled = enabled
+        self._error_limit = max(consecutive_error_limit, 1)
+        self._consecutive_errors = 0
+        self._circuit_open = False
+
+    @property
+    def circuit_open(self) -> bool:
+        return self._circuit_open
+
+    @property
+    def consecutive_errors(self) -> int:
+        return self._consecutive_errors
+
+    def force_disable(self) -> None:
+        """Runtime kill switch — called by the admin endpoint."""
+        self._enabled = False
+
+    def force_enable(self) -> None:
+        """Re-enable after operator review. Resets the breaker too."""
+        self._enabled = True
+        self._circuit_open = False
+        self._consecutive_errors = 0
 
     def generate(self, state: dict[str, Any]) -> NarrativeResult:
         """Synchronous call (Anthropic Python SDK is sync). Caller may
         offload to a thread pool if it needs concurrency.
 
-        ``effort: "low"`` matches Anthropic's recommended starting point for
-        content generation on Sonnet 4.6+ — terser preambles, fewer redundant
-        clauses, similar quality at a fraction of the output tokens. Bump to
-        ``"medium"`` if narrative quality regresses.
+        Returns a stub (no API call) when disabled. Raises CircuitOpen
+        (no API call) when too many consecutive errors have tripped this
+        replica's breaker; the caller logs and moves on.
         """
         if not self._enabled:
             logger.info("ai_engine.narrator.disabled_stub_returned",
                         attack_id=state.get("attack_id"))
-            return _stub_result(state)
+            return _stub_result(state, reason="kill switch on")
 
-        message = self._client.messages.create(
-            model=self._model,
-            max_tokens=1024,
-            output_config={"effort": "low"},
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": _build_user_message(state)}],
-        )
+        if self._circuit_open:
+            logger.warning(
+                "ai_engine.narrator.circuit_open_skipping_claude",
+                attack_id=state.get("attack_id"),
+                consecutive_errors=self._consecutive_errors,
+            )
+            raise CircuitOpen(
+                f"breaker tripped after {self._consecutive_errors} consecutive errors"
+            )
+
+        try:
+            message = self._client.messages.create(
+                model=self._model,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": _build_user_message(state)}],
+            )
+        except Exception:
+            self._consecutive_errors += 1
+            if self._consecutive_errors >= self._error_limit:
+                self._circuit_open = True
+                logger.error(
+                    "ai_engine.narrator.circuit_tripped",
+                    consecutive_errors=self._consecutive_errors,
+                    limit=self._error_limit,
+                    hint="narrator disabled in this replica until restart",
+                )
+            raise
+
+        # Reset the breaker on any successful call.
+        self._consecutive_errors = 0
         text = _extract_text(message)
         return parse_response_text(text)
 
 
 def _extract_text(message: Any) -> str:
-    """Pull the assistant text out of an Anthropic Message object.
-
-    Tolerates dict-shaped mocks too — handy for tests.
-    """
     content = getattr(message, "content", None)
     if content is None and isinstance(message, dict):
         content = message.get("content")
