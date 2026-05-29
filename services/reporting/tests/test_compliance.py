@@ -189,9 +189,10 @@ async def test_aggregator_counts_attacks_by_phase_and_resolved():
     assert summary["active_attacks"] == 1
     assert summary["attacks_resolved_7d"] == 1
     assert summary["mttr_seconds_7d"] is not None
+    # Phase distribution reflects only currently-active attacks, so the
+    # resolved lateral-movement attack is excluded (see aggregator.py).
     assert summary["attacks_by_phase"] == {
         "credential-access": 1,
-        "lateral-movement": 1,
     }
 
 
