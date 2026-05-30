@@ -39,6 +39,10 @@ class _FakeProducer:
         self.published.append(event)
         return True
 
+    async def publish_signals_batch(self, events: list[CDMEvent]) -> int:
+        self.published.extend(events)
+        return len(events)
+
 
 class _FakeEngine:
     def __init__(self, connected=True):
@@ -129,6 +133,35 @@ async def test_signals_503_when_pipeline_down(monkeypatch):
     with pytest.raises(HTTPException) as ei:
         await main.ingest_signal(_event(), authorization="Bearer vgl_x")
     assert ei.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_detect_evaluate_dry_run(monkeypatch):
+    async def fake_auth(_a):
+        return "t"
+
+    monkeypatch.setattr(main, "authenticate", fake_auth)
+    out = await main.detect_evaluate(_raw_event(), authorization="Bearer vgl_x")
+    assert out["best"] == "D7-UAC-BYPASS-FODHELPER"
+    assert any(m["detection_id"] == "D7-UAC-BYPASS-FODHELPER" for m in out["matched"])
+    assert out["rule_count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_signals_batch_publishes_and_enriches(monkeypatch):
+    async def fake_auth(_a):
+        return "real-tenant"
+
+    monkeypatch.setattr(main, "authenticate", fake_auth)
+    monkeypatch.setattr(main, "engine", _FakeEngine(connected=True))
+
+    out = await main.ingest_signals_batch(
+        [_event(), _raw_event()], authorization="Bearer vgl_x"
+    )
+    assert out["received"] == 2
+    assert out["published"] == 2
+    assert out["enriched"] == 1  # the raw event got a detection_id
+    assert all(e.tenant_id == "real-tenant" for e in main.engine.producer.published)
 
 
 @pytest.mark.asyncio

@@ -21,7 +21,7 @@ from pydantic import BaseModel
 
 from . import simulation
 from .auth import authenticate, close_pool, get_pool_optional
-from .cdm_rules import DEFAULT_RULES, apply_match, best_match
+from .cdm_rules import DEFAULT_RULES, apply_match, best_match, evaluate
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
@@ -298,6 +298,57 @@ async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")
         "detection_id": event.detection_id,
         "matched_rule": matched,
         "published": True,
+    }
+
+
+@app.post("/detect/evaluate")
+async def detect_evaluate(event: CDMEvent, authorization: str = Header(default="")):
+    """Dry-run the VIGIL-native in-transit detection rules against a CDM event
+    WITHOUT publishing — the testing surface for the detection runtime (Big Bet
+    1). Returns every matching rule and the best match.
+    """
+    await authenticate(authorization)
+    matches = evaluate(event, DEFAULT_RULES)
+    best = best_match(event, DEFAULT_RULES)
+    return {
+        "matched": [
+            {"detection_id": r.detection_id, "name": r.name, "tactic": r.tactic,
+             "technique_id": r.technique_id, "confidence": r.confidence}
+            for r in matches
+        ],
+        "best": best.detection_id if best else None,
+        "rule_count": len(DEFAULT_RULES),
+    }
+
+
+@app.post("/signals/batch")
+async def ingest_signals_batch(
+    events: list[CDMEvent], authorization: str = Header(default="")
+):
+    """HEC / S3-micro-batch bulk ingestion (Big Bet 2). Accept many CDM events
+    at once — e.g. a data-lake landing batch fanned out via S3->SQS — each
+    tenant-scoped to the key, run through the in-transit evaluator, and
+    published to vigil.signals.raw.
+    """
+    tenant_id = await authenticate(authorization)
+    if not engine or not engine.producer.is_connected():
+        raise HTTPException(status_code=503, detail="ingest pipeline unavailable")
+    if not events:
+        return {"received": 0, "published": 0, "enriched": 0, "tenant_id": tenant_id}
+    enriched = 0
+    for ev in events:
+        ev.tenant_id = tenant_id
+        if not ev.detection_id:
+            rule = best_match(ev, DEFAULT_RULES)
+            if rule:
+                apply_match(ev, rule)
+                enriched += 1
+    published = await engine.producer.publish_signals_batch(events)
+    return {
+        "received": len(events),
+        "published": published,
+        "enriched": enriched,
+        "tenant_id": tenant_id,
     }
 
 
