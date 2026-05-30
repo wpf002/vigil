@@ -76,6 +76,21 @@ class EvidenceItem(BaseModel):
     status_contributed: PhaseStatus
     confidence_contribution: float              # 0.0–1.0
 
+    # ── Enrichment (optional; populated from the source CDM event) ────────────
+    # Surfaced in the evidence drill-down so analysts don't have to pivot to the
+    # SIEM for basic context. All optional → older evidence rows stay valid.
+    title: Optional[str] = None
+    description: Optional[str] = None
+    severity: Optional[str] = None
+    host: Optional[str] = None
+    ip: Optional[str] = None
+    user: Optional[str] = None
+    process: Optional[str] = None
+    command_line: Optional[str] = None
+    dest_ip: Optional[str] = None
+    dest_port: Optional[int] = None
+    raw_event: dict[str, Any] = Field(default_factory=dict)
+
 
 # ─── Phase State ──────────────────────────────────────────────────────────────
 

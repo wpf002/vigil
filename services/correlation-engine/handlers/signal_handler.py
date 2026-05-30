@@ -49,6 +49,25 @@ logger = structlog.get_logger(__name__)
 _PHASE_LABEL_FALLBACK = "Unclassified Activity"
 
 
+def _evidence_raw_excerpt(event: "CDMEvent", max_keys: int = 12) -> dict:
+    """A bounded, scalar-only excerpt of the source event for the evidence
+    drill-down — avoids persisting unbounded raw blobs into the AttackState
+    JSONB while still giving analysts the key raw fields.
+    """
+    raw = getattr(event, "raw_event", None) or {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict = {}
+    for k, v in raw.items():
+        if len(out) >= max_keys:
+            break
+        if v is None or isinstance(v, (str, int, float, bool)):
+            if isinstance(v, str) and len(v) > 300:
+                v = v[:300] + "…"
+            out[str(k)] = v
+    return out
+
+
 class Publisher(Protocol):
     async def publish_attack_created(self, state: AttackState) -> bool: ...
     async def publish_attack_updated(self, state: AttackState, transition: AttackStateTransition) -> bool: ...
@@ -299,6 +318,8 @@ class SignalHandler:
         self, event: CDMEvent, impact: detections_registry.StateImpact
     ) -> EvidenceItem:
         entity_type, entity_value = self._primary_entity(event)
+        net = event.network
+        sev = getattr(event.severity, "value", event.severity)
         return EvidenceItem(
             signal_id=str(event.event_id),
             detection_id=event.detection_id,
@@ -312,6 +333,18 @@ class SignalHandler:
             technique_id=event.mitre.technique_id if event.mitre else None,
             status_contributed=impact["status"],
             confidence_contribution=impact["confidence_contribution"],
+            # ── enrichment carried through from the CDM event ──
+            title=event.title,
+            description=event.description,
+            severity=str(sev) if sev else None,
+            host=event.host.hostname if event.host else None,
+            ip=(event.host.ip if event.host else None) or (net.src_ip if net else None),
+            user=event.user.username if event.user else None,
+            process=event.process.process_name if event.process else None,
+            command_line=event.process.command_line if event.process else None,
+            dest_ip=net.dst_ip if net else None,
+            dest_port=net.dst_port if net else None,
+            raw_event=_evidence_raw_excerpt(event),
         )
 
     @staticmethod

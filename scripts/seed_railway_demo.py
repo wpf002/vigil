@@ -150,6 +150,8 @@ def build_attack(scenario, *, opened: datetime, n_steps: int, status, confidence
         ts = opened + timedelta(seconds=span * (i / max(len(steps) - 1, 1)))
         pstatus = _pick_phase_status(i, len(steps), terminal)
         ev_id = uuid4()
+        proc = random.choice(["powershell.exe", "cmd.exe", "rundll32.exe",
+                              "lsass.exe", "wmic.exe", "psexec.exe"])
         evidence.append(EvidenceItem(
             evidence_id=ev_id,
             signal_id=str(uuid4()),
@@ -164,6 +166,20 @@ def build_attack(scenario, *, opened: datetime, n_steps: int, status, confidence
             technique_id=tech_id,
             status_contributed=pstatus,
             confidence_contribution=round(random.uniform(0.4, 0.9), 2),
+            # enrichment for the evidence drill-down
+            title=f"{rule} on {host}",
+            description=f"{tech_name} ({tech_id}) observed on {host} ({ip}) involving {user}.",
+            severity=random.choice(["critical", "high", "medium"]),
+            host=host,
+            ip=ip,
+            user=user,
+            process=proc,
+            command_line=f"{proc} " + random.choice(["-enc SQBFAFgA", "/c whoami /priv",
+                                                     "-noP -w hidden", r"\\admin$\svc.exe"]),
+            dest_ip=random.choice(IPS),
+            dest_port=random.choice([445, 3389, 443, 80, 5985]),
+            raw_event={"_time": ts.isoformat(), "host": host, "src_ip": ip, "user": user,
+                       "signature": rule, "technique": tech_id, "sourcetype": f"{siem}:notable"},
         ))
         phases.append(PhaseState(
             phase=tactic,
