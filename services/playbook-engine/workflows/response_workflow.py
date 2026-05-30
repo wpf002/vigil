@@ -77,10 +77,14 @@ class ResponseWorkflow:
         completed: list[int] = []
         failed: int | None = None
 
-        # Stable ordering: immediate first (in input order), then follow_up.
+        # Stable ordering: enrichment (read-only context) first, then response
+        # (state-changing); within each, immediate before follow_up.
         ordered: list[tuple[int, dict[str, Any]]] = sorted(
             enumerate(inp.actions),
-            key=lambda item: 0 if (item[1].get("priority") == "immediate") else 1,
+            key=lambda item: (
+                0 if item[1].get("kind") == "enrichment" else 1,
+                0 if item[1].get("priority") == "immediate" else 1,
+            ),
         )
 
         idx_pos = 0
@@ -174,7 +178,10 @@ class ResponseWorkflow:
         elif action_type == "review_auth_logs":
             args = [target, inp.tenant_id, inp.attack_id]
         else:
-            return True
+            # Generic single-target dispatch for any other registered activity
+            # (e.g. enrichment: ioc_lookup / asset_context / user_context).
+            # Adding such an action no longer requires editing this workflow.
+            args = [target, inp.tenant_id, inp.attack_id]
 
         result = await workflow.execute_activity(
             activity_callable,

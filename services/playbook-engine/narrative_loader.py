@@ -19,6 +19,23 @@ import yaml
 logger = structlog.get_logger(__name__)
 
 
+# Read-only context-gathering actions, safe to run automatically before any
+# state-changing response. Used to classify a playbook action's `kind` when the
+# YAML doesn't state it explicitly.
+ENRICHMENT_ACTION_TYPES: set[str] = {
+    "ioc_lookup",
+    "asset_context",
+    "user_context",
+    "threat_intel_lookup",
+    "geo_lookup",
+    "reputation_check",
+}
+
+
+def classify_kind(action_type: str) -> str:
+    return "enrichment" if action_type in ENRICHMENT_ACTION_TYPES else "response"
+
+
 @dataclass
 class PlaybookAction:
     action_type: str
@@ -26,12 +43,14 @@ class PlaybookAction:
     automated: bool = False
     protocol: Optional[str] = None
     description: str = ""
+    kind: str = "response"  # "enrichment" (read-only) | "response" (state-changing)
 
     def to_response_action(self, priority: str, target_entity: str) -> dict[str, Any]:
         """Shape this action into the AttackState.recommended_actions schema."""
         return {
             "action_type": self.action_type,
             "priority": priority,
+            "kind": self.kind,
             "target_entity": target_entity,
             "description": self.description or self.action_type.replace("_", " ").title(),
             "automated": self.automated,
@@ -45,6 +64,7 @@ class Playbook:
     narrative_id: str
     playbook_name: str
     trigger: str
+    enrichment: list[PlaybookAction] = field(default_factory=list)
     immediate: list[PlaybookAction] = field(default_factory=list)
     follow_up: list[PlaybookAction] = field(default_factory=list)
 
@@ -58,13 +78,17 @@ class Narrative:
     playbooks: list[Playbook] = field(default_factory=list)
 
 
-def _load_action(node: dict[str, Any]) -> PlaybookAction:
+def _load_action(node: dict[str, Any], *, force_kind: Optional[str] = None) -> PlaybookAction:
+    action_type = str(node.get("action") or "unknown")
+    # force_kind (the YAML block) wins, then explicit `kind`, then inference.
+    kind = force_kind or str(node.get("kind") or classify_kind(action_type))
     return PlaybookAction(
-        action_type=str(node.get("action") or "unknown"),
+        action_type=action_type,
         target=str(node.get("target") or "unknown"),
         automated=bool(node.get("automated", False)),
         protocol=node.get("protocol"),
         description=str(node.get("description") or ""),
+        kind=kind,
     )
 
 
@@ -97,6 +121,8 @@ def load_narratives(narratives_path: Path) -> list[Narrative]:
                     narrative_id=narrative_id,
                     playbook_name=pb_name,
                     trigger=str(pb_node.get("trigger") or ""),
+                    enrichment=[_load_action(a, force_kind="enrichment")
+                                for a in (pb_node.get("enrichment") or []) if isinstance(a, dict)],
                     immediate=[_load_action(a) for a in (pb_node.get("immediate") or []) if isinstance(a, dict)],
                     follow_up=[_load_action(a) for a in (pb_node.get("follow_up") or []) if isinstance(a, dict)],
                 )
@@ -170,6 +196,9 @@ def render_actions_for(playbook: Playbook, *, primary_host: Optional[str], prima
         return token
 
     actions: list[dict[str, Any]] = []
+    # Enrichment first (read-only context), then immediate, then follow_up.
+    for a in playbook.enrichment:
+        actions.append(a.to_response_action(priority="immediate", target_entity=resolve_target(a.target)))
     for a in playbook.immediate:
         actions.append(a.to_response_action(priority="immediate", target_entity=resolve_target(a.target)))
     for a in playbook.follow_up:

@@ -63,6 +63,7 @@ export interface PhaseState {
 export interface ResponseAction {
   action_type: string;
   priority: "immediate" | "follow_up" | string;
+  kind?: "enrichment" | "response" | string;
   target_entity: string;
   description: string;
   automated: boolean;

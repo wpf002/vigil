@@ -100,6 +100,11 @@ function ActionGroup({
               </div>
               <div className="text-xs text-fg-muted mt-0.5 flex items-center gap-2">
                 <span className="opacity-70">{titleCase(action.action_type)}</span>
+                {action.kind === "enrichment" && (
+                  <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded-sm border border-info/40 bg-info/10 text-info">
+                    enrich
+                  </span>
+                )}
                 <span className="opacity-50">→</span>
                 <span>{action.target_entity}</span>
                 {action.automated && (

@@ -126,6 +126,32 @@ async def review_auth_logs(host: str, tenant_id: str, attack_id: str) -> bool:
     return bool(res.get("success"))
 
 
+# ── enrichment activities (read-only context gathering) ───────────────────────
+# These never change state, so the workflow runs them first and automatically.
+# In stub mode they log and succeed; a real backend would query TI / asset / IAM.
+
+
+@activity.defn
+async def ioc_lookup(indicator: str, tenant_id: str, attack_id: str) -> bool:
+    res = await _dispatch("ioc_lookup", indicator=indicator,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
+
+
+@activity.defn
+async def asset_context(host: str, tenant_id: str, attack_id: str) -> bool:
+    res = await _dispatch("asset_context", host=host,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
+
+
+@activity.defn
+async def user_context(user: str, tenant_id: str, attack_id: str) -> bool:
+    res = await _dispatch("user_context", user=user,
+                          tenant_id=tenant_id, attack_id=attack_id)
+    return bool(res.get("success"))
+
+
 @activity.defn
 async def notify_attack_state_complete(
     base_url: str,
@@ -166,6 +192,9 @@ ALL_ACTIVITIES = [
     capture_forensic_snapshot,
     block_protocol,
     review_auth_logs,
+    ioc_lookup,
+    asset_context,
+    user_context,
     notify_attack_state_complete,
 ]
 
@@ -180,4 +209,8 @@ ACTIVITY_DISPATCH = {
     "capture_forensic_snapshot": capture_forensic_snapshot,
     "block_protocol": block_protocol,
     "review_auth_logs": review_auth_logs,
+    # enrichment (read-only)
+    "ioc_lookup": ioc_lookup,
+    "asset_context": asset_context,
+    "user_context": user_context,
 }

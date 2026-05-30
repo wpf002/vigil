@@ -146,14 +146,16 @@ export function PlaybookDetail() {
           )}
 
           <ActionSection
-            title="Immediate"
-            actions={run.actions.filter((a) => a.priority === "immediate")}
+            title="Enrichment"
+            subtitle="read-only context — runs first, automatically"
+            actions={run.actions.filter((a) => a.kind === "enrichment")}
             completedActions={run.completed_actions}
           />
 
           <ActionSection
-            title="Follow-up"
-            actions={run.actions.filter((a) => a.priority !== "immediate")}
+            title="Response"
+            subtitle="state-changing — runs after enrichment"
+            actions={run.actions.filter((a) => a.kind !== "enrichment")}
             completedActions={run.completed_actions}
           />
         </>
@@ -193,10 +195,12 @@ function Banner({
 
 function ActionSection({
   title,
+  subtitle,
   actions,
   completedActions,
 }: {
   title: string;
+  subtitle?: string;
   actions: ResponseAction[];
   completedActions: ResponseAction[];
 }) {
@@ -214,8 +218,13 @@ function ActionSection({
 
   return (
     <div className="vigil-card p-4 mb-3">
-      <div className="text-[11px] uppercase font-mono text-fg-faint tracking-wider mb-3">
-        {title} ({actions.length})
+      <div className="mb-3">
+        <div className="text-[11px] uppercase font-mono text-fg-faint tracking-wider">
+          {title} ({actions.length})
+        </div>
+        {subtitle && (
+          <div className="text-[10px] font-mono text-fg-faint/70 mt-0.5">{subtitle}</div>
+        )}
       </div>
       <ul className="space-y-2">
         {actions.map((a, idx) => {
@@ -235,7 +244,14 @@ function ActionSection({
                 {done ? <Check size={12} /> : null}
               </div>
               <div className="flex-1">
-                <div className="text-sm font-mono text-fg">{titleCase(a.action_type)}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-mono text-fg">{titleCase(a.action_type)}</span>
+                  {a.priority === "immediate" && (
+                    <span className="text-[9px] font-mono uppercase tracking-wider px-1 py-px rounded-sm border border-accent/40 bg-accent/10 text-accent-hover">
+                      immediate
+                    </span>
+                  )}
+                </div>
                 <div className="text-[12px] font-mono text-fg-muted">
                   {a.target_entity} • {a.description}
                 </div>
