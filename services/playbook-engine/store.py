@@ -34,19 +34,24 @@ class PlaybookStore:
         phase_at_trigger: str,
         confidence_at_trigger: float,
         actions: list[dict[str, Any]],
+        run_id: Optional[UUID] = None,
     ) -> UUID:
+        # When the caller supplies run_id (so workflow_id = playbook-{run_id}
+        # stays consistent and the value is returned to the client), use it;
+        # otherwise let the DB generate one.
         sql = """
             INSERT INTO playbook_runs (
-                attack_id, tenant_id, workflow_id,
+                run_id, attack_id, tenant_id, workflow_id,
                 narrative_id, phase_at_trigger, confidence_at_trigger,
                 actions, completed_actions, status
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, '[]'::jsonb, 'running')
+            VALUES (COALESCE($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8::jsonb, '[]'::jsonb, 'running')
             RETURNING run_id
         """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 sql,
+                run_id,
                 attack_id,
                 tenant_id,
                 workflow_id,

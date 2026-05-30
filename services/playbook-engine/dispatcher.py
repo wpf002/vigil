@@ -109,6 +109,7 @@ async def dispatch_playbook(
     workflow_id = f"playbook-{run_id}"
 
     await store.create_run(
+        run_id=run_id,
         attack_id=attack_id,
         tenant_id=tenant_id,
         workflow_id=workflow_id,
