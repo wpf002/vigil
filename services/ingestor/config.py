@@ -46,6 +46,12 @@ class IngestorConfig(BaseSettings):
     log_level: str = "INFO"
     tenant_id: str = "default"
 
+    # Postgres DSN — only needed for the inbound POST /signals webhook, which
+    # authenticates customer API keys against the shared api_keys table. The
+    # poll-based ingest path does not require it, so it stays optional and the
+    # pool is opened lazily on first authenticated request.
+    database_url: Optional[str] = None
+
 
 _config: Optional[IngestorConfig] = None
 

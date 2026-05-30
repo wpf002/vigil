@@ -14,9 +14,10 @@ from typing import Optional
 
 import structlog
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
+from .auth import authenticate, close_pool
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
@@ -219,6 +220,7 @@ async def lifespan(app: FastAPI):
         await engine.stop()
     if _engine_task:
         _engine_task.cancel()
+    await close_pool()
 
 
 app = FastAPI(title="VIGIL Ingestor", version="0.1.0", lifespan=lifespan)
@@ -255,6 +257,31 @@ async def status():
     if not engine:
         raise HTTPException(status_code=503, detail="Engine not initialized")
     return engine.get_status()
+
+
+@app.post("/signals")
+async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")):
+    """Agent-less ingestion: accept a single CDM event and publish it straight
+    to vigil.signals.raw, the same topic the SIEM pollers feed.
+
+    Auth is a Bearer `vgl_…` API key; the event is scoped to that key's tenant
+    (the body's tenant_id is overwritten, never trusted). This is the inbound
+    path the SDK's submit_signal() targets, and the seam for webhook-based
+    ingestion, detection testing, and attack simulation.
+    """
+    tenant_id = await authenticate(authorization)
+    if not engine or not engine.producer.is_connected():
+        raise HTTPException(status_code=503, detail="ingest pipeline unavailable")
+    event.tenant_id = tenant_id
+    published = await engine.producer.publish_signal(event)
+    if not published:
+        raise HTTPException(status_code=502, detail="failed to publish signal")
+    return {
+        "event_id": str(event.event_id),
+        "tenant_id": tenant_id,
+        "detection_id": event.detection_id,
+        "published": True,
+    }
 
 
 @app.post("/poll/trigger")
