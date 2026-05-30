@@ -22,7 +22,8 @@ from temporalio.client import Client as TemporalClient
 
 from .auth import TenantPrincipal, get_principal
 from .config import PlaybookEngineConfig, get_config
-from .narrative_loader import load_narratives
+from .dispatcher import dispatch_playbook, fetch_attack_state
+from .narrative_loader import Narrative, load_narratives
 from .store import PlaybookStore
 
 logger = structlog.get_logger(__name__)
@@ -52,6 +53,7 @@ def err(message: str, code: int = 400) -> JSONResponse:
 _store: Optional[PlaybookStore] = None
 _temporal_client: Optional[TemporalClient] = None
 _config: Optional[PlaybookEngineConfig] = None
+_narratives: list[Narrative] = []
 
 
 async def _ensure_temporal_client(cfg: PlaybookEngineConfig) -> Optional[TemporalClient]:
@@ -67,11 +69,14 @@ async def _ensure_temporal_client(cfg: PlaybookEngineConfig) -> Optional[Tempora
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _temporal_client, _config
+    global _store, _temporal_client, _config, _narratives
     _config = get_config()
     _store = await PlaybookStore.from_dsn(_config.database_url)
     _temporal_client = await _ensure_temporal_client(_config)
-    logger.info("playbook_engine.api.started", port=_config.port)
+    _narratives = load_narratives(Path(_config.narratives_path))
+    logger.info(
+        "playbook_engine.api.started", port=_config.port, narratives=len(_narratives)
+    )
     try:
         yield
     finally:
@@ -211,6 +216,42 @@ async def abort_playbook(
 
     await store.mark_status(run_id, "failed", completed_at=datetime.now(timezone.utc))
     return ok({"run_id": str(run_id), "status": "failed"})
+
+
+class RunPlaybookRequest(BaseModel):
+    attack_id: UUID
+
+
+@app.post("/playbooks/run")
+async def run_playbook(
+    body: RunPlaybookRequest,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    """Manually trigger a response playbook for an attack — on demand, from the
+    Actions UI, regardless of confidence (no escalation gate). Selects, persists,
+    and starts the same workflow the auto (Kafka) path uses.
+    """
+    if _temporal_client is None:
+        return err("Temporal unavailable", code=503)
+    if _config is None:
+        return err("Service not initialized", code=503)
+
+    attack_state = await fetch_attack_state(_config, str(body.attack_id), principal.tenant_id)
+    if attack_state is None:
+        return err("Attack not found", code=404)
+
+    result = await dispatch_playbook(
+        attack_state,
+        narratives=_narratives,
+        store=store,
+        temporal_client=_temporal_client,
+        cfg=_config,
+        trigger="manual",
+    )
+    if result is None:
+        return err("No playbook matches this attack's current phase/status", code=422)
+    return ok(result)
 
 
 @app.get("/narratives")

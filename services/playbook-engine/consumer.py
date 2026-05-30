@@ -11,7 +11,6 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any, Optional
-from uuid import UUID, uuid4
 
 import httpx
 import structlog
@@ -20,14 +19,9 @@ from kafka.errors import KafkaError, NoBrokersAvailable
 from temporalio.client import Client as TemporalClient
 
 from .config import PlaybookEngineConfig
-from .narrative_loader import (
-    Narrative,
-    load_narratives,
-    render_actions_for,
-    select_playbook,
-)
+from .dispatcher import dispatch_playbook
+from .narrative_loader import Narrative, load_narratives
 from .store import PlaybookStore
-from .workflows.response_workflow import ResponseWorkflow, ResponseWorkflowInput
 
 logger = structlog.get_logger(__name__)
 
@@ -178,63 +172,13 @@ class EscalationConsumer:
             return None
 
     async def _dispatch(self, attack_state: dict[str, Any]) -> None:
-        attack_id = UUID(str(attack_state["attack_id"]))
-        tenant_id_str = str(attack_state["tenant_id"])
-        try:
-            tenant_id = UUID(tenant_id_str)
-        except (ValueError, TypeError):
-            # Dev-mode tenants may be free-form strings; coerce deterministically.
-            from uuid import NAMESPACE_DNS, uuid5
-            tenant_id = uuid5(NAMESPACE_DNS, tenant_id_str)
-
-        phase = str(attack_state.get("current_phase") or "")
-        confidence = float(attack_state.get("confidence") or 0.0)
-
-        # Pick status by reading the matching phase entry; default Observed.
-        status = "Observed"
-        for ph in attack_state.get("phases") or []:
-            if isinstance(ph, dict) and str(ph.get("phase")) == phase:
-                status = str(ph.get("status") or status)
-                break
-
-        playbook = select_playbook(
-            self._narratives, phase=phase, status=status, confidence=confidence
-        )
-        if playbook is None:
-            logger.info("playbook_consumer.no_playbook_match", phase=phase, status=status)
-            return
-
-        primary_host = next(iter(attack_state.get("hosts") or []), None)
-        primary_user = next(iter(attack_state.get("users") or []), None)
-        actions = render_actions_for(
-            playbook, primary_host=primary_host, primary_user=primary_user
-        )
-
-        run_id = uuid4()
-        workflow_id = f"playbook-{run_id}"
-
-        await self.store.create_run(
-            attack_id=attack_id,
-            tenant_id=tenant_id,
-            workflow_id=workflow_id,
-            narrative_id=playbook.narrative_id,
-            phase_at_trigger=phase,
-            confidence_at_trigger=confidence,
-            actions=actions,
-        )
-
-        await self.temporal_client.start_workflow(
-            ResponseWorkflow.run,
-            ResponseWorkflowInput(
-                attack_id=str(attack_id),
-                tenant_id=str(tenant_id),
-                run_id=str(run_id),
-                actions=actions,
-                attack_state_engine_url=self.cfg.attack_state_engine_url,
-                internal_api_key=self.cfg.internal_api_key,
-            ),
-            id=workflow_id,
-            task_queue=self.cfg.temporal_task_queue,
+        await dispatch_playbook(
+            attack_state,
+            narratives=self._narratives,
+            store=self.store,
+            temporal_client=self.temporal_client,
+            cfg=self.cfg,
+            trigger="auto",
         )
 
         logger.info(

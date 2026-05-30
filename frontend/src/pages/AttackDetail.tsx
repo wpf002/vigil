@@ -1,11 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Play } from "lucide-react";
 import {
   completeAction,
   getAttack,
   updateAttackStatus,
 } from "@/api/attacks";
+import { runPlaybook } from "@/api/playbooks";
 import { ConfidenceBar } from "@/components/ConfidenceBar";
 import { EvidenceList } from "@/components/EvidenceList";
 import { MomentumIndicator } from "@/components/MomentumIndicator";
@@ -22,6 +23,7 @@ import type { AttackStateStatus } from "@/types/attacks";
 
 export function AttackDetail() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -45,6 +47,18 @@ export function AttackDetail() {
       completeAction(id as string, actionIndex),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attack", id] });
+    },
+  });
+
+  const runPlaybookMutation = useMutation({
+    mutationFn: () => runPlaybook(id as string),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["playbooks"] });
+      navigate(`/playbooks/${result.run_id}`);
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "Failed to run playbook";
+      alert(`Could not run playbook: ${msg}`);
     },
   });
 
@@ -204,9 +218,20 @@ export function AttackDetail() {
       </section>
 
       <section>
-        <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-faint font-mono mb-2">
-          Recommended Actions
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-faint font-mono">
+            Recommended Actions
+          </h2>
+          <button
+            type="button"
+            onClick={() => runPlaybookMutation.mutate()}
+            disabled={runPlaybookMutation.isPending}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono border border-accent/40 bg-accent/10 text-accent-hover rounded-sm hover:bg-accent/20 disabled:opacity-50"
+          >
+            <Play size={12} />
+            {runPlaybookMutation.isPending ? "Starting…" : "Run Playbook"}
+          </button>
+        </div>
         <RecommendedActions
           actions={attack.recommended_actions}
           onComplete={(idx) => actionMutation.mutate(idx)}

@@ -117,6 +117,23 @@ export async function abortPlaybook(runId: string): Promise<{ run_id: string; st
   return unwrap(res.data);
 }
 
+export interface RunPlaybookResult {
+  run_id: string;
+  workflow_id: string;
+  narrative_id: string | null;
+  phase_at_trigger: string;
+  trigger: string;
+  action_count: number;
+}
+
+export async function runPlaybook(attackId: string): Promise<RunPlaybookResult> {
+  const res = await playbookClient.post<ApiEnvelope<RunPlaybookResult>>(
+    "/playbooks/run",
+    { attack_id: attackId },
+  );
+  return unwrap(res.data);
+}
+
 export async function listNarratives(): Promise<NarrativeSummary[]> {
   const res = await playbookClient.get<ApiEnvelope<NarrativeSummary[]>>("/narratives");
   return unwrap(res.data);
