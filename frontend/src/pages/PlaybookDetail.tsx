@@ -82,10 +82,11 @@ export function PlaybookDetail() {
                   className="text-xl font-mono text-fg"
                   title={`Temporal workflow: ${run.workflow_id}`}
                 >
-                  Run {run.run_id.slice(0, 8)}
+                  {titleCase(run.phase_at_trigger)} Response
                 </h1>
                 <div className="text-[11px] font-mono text-fg-muted mt-1">
-                  Triggered {run.triggered_at ? timeAgo(run.triggered_at) : "—"}
+                  Run {run.run_id.slice(0, 8)} · Triggered{" "}
+                  {run.triggered_at ? timeAgo(run.triggered_at) : "—"}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">

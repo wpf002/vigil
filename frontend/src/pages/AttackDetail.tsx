@@ -218,7 +218,9 @@ export function AttackDetail() {
           {attack.narrative ? (
             attack.narrative
           ) : (
-            <NarrativeSkeleton />
+            <span className="text-fg-faint not-italic">
+              No AI narrative generated for this attack.
+            </span>
           )}
           {attack.predicted_next_phase && (
             <div className="mt-3 text-xs text-fg-muted">
@@ -258,19 +260,6 @@ export function AttackDetail() {
         </h2>
         <EvidenceList evidence={attack.evidence} />
       </section>
-    </div>
-  );
-}
-
-function NarrativeSkeleton() {
-  return (
-    <div className="space-y-2 animate-pulse-soft">
-      <div className="h-3 bg-surface-2 rounded w-3/4" />
-      <div className="h-3 bg-surface-2 rounded w-5/6" />
-      <div className="h-3 bg-surface-2 rounded w-2/3" />
-      <div className="text-xs text-fg-muted italic mt-3">
-        Generating narrative…
-      </div>
     </div>
   );
 }

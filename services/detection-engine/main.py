@@ -443,6 +443,21 @@ async def marketplace_publish(
     if not active.get("yaml_content"):
         return err("Detection has no YAML to publish", code=400)
 
+    # Don't let the same detection be published twice into the Marketplace.
+    existing = await market.find_any_listing_by_detection(body.detection_id)
+    if existing is not None:
+        if existing.get("is_curated"):
+            return err(
+                f"'{body.detection_id}' is a curated VIGIL detection already in the "
+                "Marketplace — it's available to import, no need to publish.",
+                code=409,
+            )
+        if existing.get("publisher_tenant_id") == tenant:
+            return err(
+                f"'{body.detection_id}' is already published in the Marketplace.",
+                code=409,
+            )
+
     listing = await market.upsert_listing(
         detection_id=body.detection_id,
         publisher_tenant_id=tenant,

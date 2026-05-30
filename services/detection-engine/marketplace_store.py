@@ -42,6 +42,19 @@ class MarketplaceStore:
             row = await conn.fetchrow(sql, detection_id, publisher_tenant_id)
         return dict(row) if row else None
 
+    async def find_any_listing_by_detection(
+        self, detection_id: str
+    ) -> Optional[dict[str, Any]]:
+        """Any existing listing for this detection_id — curated first. Used to
+        stop pointless re-publishing of a detection already in the Marketplace."""
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM marketplace_listings WHERE detection_id=$1 "
+                "ORDER BY is_curated DESC, published_at DESC LIMIT 1",
+                detection_id,
+            )
+        return dict(row) if row else None
+
     async def upsert_listing(
         self,
         *,

@@ -18,9 +18,9 @@ const MAX_ENTITIES = 3;
 
 function entitySummary(attack: AttackState) {
   const entities = [
-    ...attack.hosts.map((v) => ({ type: "Host", value: v })),
-    ...attack.users.map((v) => ({ type: "User", value: v })),
-    ...attack.processes.map((v) => ({ type: "Proc", value: v })),
+    ...(attack.hosts ?? []).map((v) => ({ type: "Host", value: v })),
+    ...(attack.users ?? []).map((v) => ({ type: "User", value: v })),
+    ...(attack.processes ?? []).map((v) => ({ type: "Proc", value: v })),
   ];
   const shown = entities.slice(0, MAX_ENTITIES);
   const remaining = entities.length - shown.length;
@@ -90,8 +90,8 @@ export function AttackCard({ attack }: Props) {
           <div className="text-right text-[10px] text-fg-faint font-mono leading-relaxed whitespace-nowrap">
             <div className="text-fg-muted">{timeAgo(attack.last_seen)}</div>
             <div>
-              {attack.evidence.length}{" "}
-              {attack.evidence.length === 1 ? "Signal" : "Signals"}
+              {attack.evidence?.length ?? 0}{" "}
+              {(attack.evidence?.length ?? 0) === 1 ? "Signal" : "Signals"}
             </div>
           </div>
 

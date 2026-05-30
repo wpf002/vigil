@@ -16,6 +16,7 @@ from uuid import uuid4
 import structlog
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -228,6 +229,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VIGIL Ingestor", version="0.1.0", lifespan=lifespan)
+
+# The analyst UI calls the ingest/simulation endpoints cross-origin from the
+# browser, so CORS is required (auth is a bearer token, not cookies).
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")

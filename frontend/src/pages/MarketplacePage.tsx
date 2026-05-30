@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Store, Download, Star, X } from "lucide-react";
 import {
@@ -26,7 +27,7 @@ export function MarketplacePage() {
   const [tacticFilter, setTacticFilter] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [showPublish, setShowPublish] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; to?: string } | null>(null);
   const qc = useQueryClient();
   const user = useAuthStore((s) => s.user);
   const isAdmin = user?.role === "admin" || user?.role === "vigil_admin";
@@ -44,13 +45,13 @@ export function MarketplacePage() {
   const importMut = useMutation({
     mutationFn: (id: string) => importListing(id),
     onSuccess: () => {
-      setToast("Detection imported to your library.");
+      setToast({ msg: "Imported — view it in your Detections library →", to: "/detections" });
       qc.invalidateQueries({ queryKey: ["marketplace"] });
       qc.invalidateQueries({ queryKey: ["detections"] });
-      setTimeout(() => setToast(null), 3000);
+      setTimeout(() => setToast(null), 6000);
     },
     onError: (e: Error) => {
-      setToast(`Import failed: ${e.message}`);
+      setToast({ msg: `Import failed: ${e.message}` });
       setTimeout(() => setToast(null), 4000);
     },
   });
@@ -132,7 +133,13 @@ export function MarketplacePage() {
 
       {toast && (
         <div className="fixed bottom-6 right-6 px-4 py-2 bg-surface-2 border border-border rounded-sm font-mono text-sm text-fg shadow-lg z-50">
-          {toast}
+          {toast.to ? (
+            <Link to={toast.to} className="text-accent-hover hover:underline">
+              {toast.msg}
+            </Link>
+          ) : (
+            toast.msg
+          )}
         </div>
       )}
 
@@ -142,7 +149,7 @@ export function MarketplacePage() {
           onSuccess={() => {
             setShowPublish(false);
             qc.invalidateQueries({ queryKey: ["marketplace"] });
-            setToast("Detection published.");
+            setToast({ msg: "Detection published to the Marketplace." });
             setTimeout(() => setToast(null), 3000);
           }}
         />

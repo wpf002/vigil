@@ -8,8 +8,11 @@ interface Props {
   evidence: EvidenceItem[];
 }
 
+const COLLAPSED_COUNT = 5;
+
 export function EvidenceList({ evidence }: Props) {
   const [open, setOpen] = useState<Set<string>>(new Set());
+  const [showAll, setShowAll] = useState(false);
   const sorted = [...evidence].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
 
   if (sorted.length === 0) {
@@ -19,6 +22,9 @@ export function EvidenceList({ evidence }: Props) {
       </div>
     );
   }
+
+  const visible = showAll ? sorted : sorted.slice(0, COLLAPSED_COUNT);
+  const hidden = sorted.length - visible.length;
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -31,7 +37,7 @@ export function EvidenceList({ evidence }: Props) {
 
   return (
     <div className="vigil-card divide-y divide-border">
-      {sorted.map((item) => {
+      {visible.map((item) => {
         const isOpen = open.has(item.evidence_id);
         return (
           <div key={item.evidence_id}>
@@ -91,6 +97,17 @@ export function EvidenceList({ evidence }: Props) {
           </div>
         );
       })}
+      {sorted.length > COLLAPSED_COUNT && (
+        <button
+          type="button"
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full px-4 py-2 text-[11px] font-mono text-fg-muted hover:text-accent hover:bg-surface-2 transition-colors text-center"
+        >
+          {showAll
+            ? `Show less — latest ${COLLAPSED_COUNT}`
+            : `Show all ${sorted.length} signals (${hidden} more)`}
+        </button>
+      )}
     </div>
   );
 }
