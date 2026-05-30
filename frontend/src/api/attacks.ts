@@ -63,6 +63,18 @@ export async function updateAttackStatus(
   return unwrap(res.data);
 }
 
+export async function updateResponseStatus(
+  attackId: string,
+  step: "containment" | "eradication" | "recovery",
+  value: boolean,
+): Promise<AttackState> {
+  const res = await apiClient.patch<ApiEnvelope<AttackState>>(
+    `/attacks/${attackId}/response-status`,
+    { step, value },
+  );
+  return unwrap(res.data);
+}
+
 export async function completeAction(
   attackId: string,
   actionId: number,

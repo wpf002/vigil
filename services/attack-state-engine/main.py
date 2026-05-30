@@ -59,6 +59,11 @@ class StatusUpdate(BaseModel):
     analyst_note: Optional[str] = None
 
 
+class ResponseStepUpdate(BaseModel):
+    step: str           # containment | eradication | recovery
+    value: bool = True
+
+
 class NarrativeUpdate(BaseModel):
     """Body of PATCH /attacks/{id}/narrative — populated by the AI engine."""
     narrative: Optional[str] = None
@@ -340,6 +345,36 @@ async def update_status(
         existing = state.analyst_summary or ""
         suffix = f"[{principal.user_id} @ {state.last_updated.isoformat()}] {body.analyst_note}"
         state.analyst_summary = f"{existing}\n{suffix}".strip()
+
+    await store.update(state)
+    return ok(state.model_dump(mode="json"))
+
+
+@app.patch("/attacks/{attack_id}/response-status")
+async def update_response_status(
+    attack_id: UUID,
+    body: ResponseStepUpdate,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: AttackStateStore = Depends(get_store),
+):
+    """Mark a triage step (containment / eradication / recovery) done or undone.
+
+    Same persistence path the status PATCH uses for containment — surfaced as an
+    ordered triage checklist on the attack detail view.
+    """
+    state = await store.get_by_id(attack_id, principal.tenant_id)
+    if state is None:
+        return err("Attack not found", code=404)
+    step = body.step.lower()
+    if step not in ("containment", "eradication", "recovery"):
+        return err("step must be containment, eradication, or recovery", code=400)
+
+    now = datetime.now(timezone.utc)
+    setattr(state.response_status, step, body.value)
+    setattr(state.response_status, f"{step}_at", now if body.value else None)
+    state.last_updated = now
+    if state.first_response_at is None and body.value:
+        state.first_response_at = now
 
     await store.update(state)
     return ok(state.model_dump(mode="json"))

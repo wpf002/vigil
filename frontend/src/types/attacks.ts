@@ -47,6 +47,18 @@ export interface EvidenceItem {
   technique_id: string | null;
   status_contributed: PhaseStatus;
   confidence_contribution: number;
+  // enrichment (optional)
+  title?: string | null;
+  description?: string | null;
+  severity?: string | null;
+  host?: string | null;
+  ip?: string | null;
+  user?: string | null;
+  process?: string | null;
+  command_line?: string | null;
+  dest_ip?: string | null;
+  dest_port?: number | null;
+  raw_event?: Record<string, unknown> | null;
 }
 
 export interface PhaseState {

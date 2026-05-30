@@ -5,8 +5,10 @@ import {
   completeAction,
   getAttack,
   updateAttackStatus,
+  updateResponseStatus,
 } from "@/api/attacks";
 import { runPlaybook } from "@/api/playbooks";
+import { TriageChecklist } from "@/components/TriageChecklist";
 import { ConfidenceBar } from "@/components/ConfidenceBar";
 import { EvidenceList } from "@/components/EvidenceList";
 import { MomentumIndicator } from "@/components/MomentumIndicator";
@@ -48,6 +50,12 @@ export function AttackDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attack", id] });
     },
+  });
+
+  const triageMutation = useMutation({
+    mutationFn: (v: { step: "containment" | "eradication" | "recovery"; value: boolean }) =>
+      updateResponseStatus(id as string, v.step, v.value),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["attack", id] }),
   });
 
   const runPlaybookMutation = useMutation({
@@ -180,6 +188,12 @@ export function AttackDetail() {
         phases={attack.phases}
         currentPhase={attack.current_phase}
         predictedNextPhase={attack.predicted_next_phase ?? null}
+      />
+
+      <TriageChecklist
+        status={attack.response_status}
+        onToggle={(step, value) => triageMutation.mutate({ step, value })}
+        disabled={triageMutation.isPending}
       />
 
       {attack.analyst_summary && (
