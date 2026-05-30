@@ -12,14 +12,13 @@ import json
 from pathlib import Path
 from typing import Any, Optional
 
-import httpx
 import structlog
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError, NoBrokersAvailable
 from temporalio.client import Client as TemporalClient
 
 from .config import PlaybookEngineConfig
-from .dispatcher import dispatch_playbook
+from .dispatcher import dispatch_playbook, fetch_attack_state
 from .narrative_loader import Narrative, load_narratives
 from .store import PlaybookStore
 
@@ -138,7 +137,9 @@ class EscalationConsumer:
             return
 
         try:
-            attack_state = await self._fetch_attack_state(str(attack_id_str), str(tenant_id_str))
+            attack_state = await fetch_attack_state(
+                self.cfg, str(attack_id_str), str(tenant_id_str)
+            )
             if attack_state is None:
                 attack_state = state
             await self._dispatch(attack_state)
@@ -150,26 +151,6 @@ class EscalationConsumer:
                 attack_id=attack_id_str,
                 error=str(e),
             )
-
-    async def _fetch_attack_state(self, attack_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
-        url = f"{self.cfg.attack_state_engine_url.rstrip('/')}/attacks/{attack_id}"
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.get(
-                    url,
-                    headers={
-                        "X-Tenant-Id": tenant_id,
-                    },
-                )
-                if resp.status_code != 200:
-                    return None
-                body = resp.json()
-                if isinstance(body, dict) and "data" in body:
-                    return body["data"] if isinstance(body["data"], dict) else None
-                return body if isinstance(body, dict) else None
-        except Exception as e:
-            logger.warning("playbook_consumer.fetch_failed", error=str(e))
-            return None
 
     async def _dispatch(self, attack_state: dict[str, Any]) -> None:
         await dispatch_playbook(

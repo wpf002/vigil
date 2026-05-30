@@ -8,10 +8,12 @@ and the REST API (manual, on-demand) so the two paths can never drift.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Optional
 from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import httpx
+import jwt
 import structlog
 from temporalio.client import Client as TemporalClient
 
@@ -31,13 +33,30 @@ def coerce_tenant_uuid(tenant_id_str: str) -> UUID:
         return uuid5(NAMESPACE_DNS, tenant_id_str)
 
 
+def _service_token(cfg: PlaybookEngineConfig, tenant_id: str) -> str:
+    """Mint a short-lived service JWT scoped to the tenant. ASE requires a real
+    bearer token in production (the X-Tenant-Id bypass is dev-only); the shared
+    auth_secret lets us authenticate service-to-service without a user session.
+    """
+    now = int(time.time())
+    return jwt.encode(
+        {"sub": "playbook-engine", "tenant_id": tenant_id, "role": "admin",
+         "iat": now, "exp": now + 120},
+        cfg.auth_secret, algorithm="HS256",
+    )
+
+
 async def fetch_attack_state(
     cfg: PlaybookEngineConfig, attack_id: str, tenant_id: str
 ) -> Optional[dict[str, Any]]:
     url = f"{cfg.attack_state_engine_url.rstrip('/')}/attacks/{attack_id}"
+    headers = {
+        "Authorization": f"Bearer {_service_token(cfg, tenant_id)}",
+        "X-Tenant-Id": tenant_id,  # dev fallback
+    }
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(url, headers={"X-Tenant-Id": tenant_id})
+            resp = await client.get(url, headers=headers)
             if resp.status_code != 200:
                 return None
             body = resp.json()
