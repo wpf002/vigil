@@ -55,6 +55,19 @@ def _event(tenant="spoofed-tenant") -> CDMEvent:
     )
 
 
+def _raw_event() -> CDMEvent:
+    """A raw event with NO detection_id, but process fields that match a rule."""
+    from ..models.cdm import ProcessEntity
+
+    return CDMEvent(
+        tenant_id="spoofed",
+        source_event_id="raw-1",
+        timestamp=datetime.now(timezone.utc),
+        title="raw telemetry",
+        process=ProcessEntity(process_name="fodhelper.exe"),
+    )
+
+
 @pytest.mark.asyncio
 async def test_signals_publishes_with_tenant_from_key(monkeypatch):
     async def fake_auth(_authorization):
@@ -71,6 +84,38 @@ async def test_signals_publishes_with_tenant_from_key(monkeypatch):
     published = main.engine.producer.published
     assert len(published) == 1
     assert published[0].tenant_id == "real-tenant-123"
+
+
+@pytest.mark.asyncio
+async def test_signals_enriches_raw_event_with_detection(monkeypatch):
+    async def fake_auth(_authorization):
+        return "real-tenant-123"
+
+    monkeypatch.setattr(main, "authenticate", fake_auth)
+    monkeypatch.setattr(main, "engine", _FakeEngine(connected=True))
+
+    out = await main.ingest_signal(_raw_event(), authorization="Bearer vgl_x")
+
+    # the in-transit evaluator tagged the raw event with a detection
+    assert out["matched_rule"] == "D7-UAC-BYPASS-FODHELPER"
+    assert out["detection_id"] == "D7-UAC-BYPASS-FODHELPER"
+    published = main.engine.producer.published[0]
+    assert published.detection_id == "D7-UAC-BYPASS-FODHELPER"
+    assert published.state_impact["phase"] == "privilege-escalation"
+
+
+@pytest.mark.asyncio
+async def test_signals_preserves_existing_detection_id(monkeypatch):
+    async def fake_auth(_authorization):
+        return "t"
+
+    monkeypatch.setattr(main, "authenticate", fake_auth)
+    monkeypatch.setattr(main, "engine", _FakeEngine(connected=True))
+
+    # event already carries a detection_id -> evaluator must not overwrite it
+    out = await main.ingest_signal(_event(), authorization="Bearer vgl_x")
+    assert out["detection_id"] == "D1-LSASS-MEMORY-ACCESS"
+    assert out["matched_rule"] is None
 
 
 @pytest.mark.asyncio

@@ -18,6 +18,7 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
 from .auth import authenticate, close_pool
+from .cdm_rules import DEFAULT_RULES, apply_match, best_match
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
@@ -273,6 +274,18 @@ async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")
     if not engine or not engine.producer.is_connected():
         raise HTTPException(status_code=503, detail="ingest pipeline unavailable")
     event.tenant_id = tenant_id
+
+    # In-transit detection: if the caller sent a raw event with no detection_id,
+    # run the CDM rule evaluator and tag it with the best matching detection so
+    # it flows into correlation. Events that already carry a detection_id (e.g.
+    # SIEM-sourced) are passed through untouched.
+    matched = None
+    if not event.detection_id:
+        rule = best_match(event, DEFAULT_RULES)
+        if rule:
+            apply_match(event, rule)
+            matched = rule.detection_id
+
     published = await engine.producer.publish_signal(event)
     if not published:
         raise HTTPException(status_code=502, detail="failed to publish signal")
@@ -280,6 +293,7 @@ async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")
         "event_id": str(event.event_id),
         "tenant_id": tenant_id,
         "detection_id": event.detection_id,
+        "matched_rule": matched,
         "published": True,
     }
 
