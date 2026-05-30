@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from . import simulation
-from .auth import authenticate, close_pool
+from .auth import authenticate, close_pool, get_pool_optional
 from .cdm_rules import DEFAULT_RULES, apply_match, best_match
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
@@ -333,6 +333,8 @@ async def run_simulation(body: SimulationRunRequest, authorization: str = Header
         user=body.user or "sim_user",
     )
     published = await engine.producer.publish_signals_batch(events)
+    expected = [s[0] for s in scenario["steps"]]
+    coverage = await simulation.coverage_report(await get_pool_optional(), tenant_id, expected)
     return {
         "simulation_id": uuid4().hex,
         "scenario": scenario["id"],
@@ -340,8 +342,9 @@ async def run_simulation(body: SimulationRunRequest, authorization: str = Header
         "tenant_id": tenant_id,
         "emitted": len(events),
         "published": published,
-        "expected_detections": [s[0] for s in scenario["steps"]],
+        "expected_detections": expected,
         "expected_phases": sorted({s[3] for s in scenario["steps"]}),
+        "coverage": coverage,
     }
 
 

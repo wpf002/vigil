@@ -10,6 +10,7 @@ import {
   Store,
   BarChart3,
   FileCheck,
+  FlaskConical,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/store/authStore";
@@ -29,6 +30,7 @@ const NAV: NavItem[] = [
   { to: "/detections", label: "Detections", icon: Radar, active: true },
   { to: "/marketplace", label: "Marketplace", icon: Store, active: true },
   { to: "/playbooks", label: "Playbooks", icon: ListChecks, active: true },
+  { to: "/simulations", label: "Simulation", icon: FlaskConical, active: true },
   { to: "/compliance", label: "Compliance", icon: FileCheck, active: true },
   { to: "/pipeline", label: "Pipeline", icon: Activity, active: true },
   { to: "/settings/api-keys", label: "Settings", icon: Settings, active: true },

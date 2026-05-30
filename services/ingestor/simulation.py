@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
-from uuid import uuid4
+from uuid import UUID, uuid4
+
+PLATFORM_TENANT = "00000000-0000-0000-0000-000000000000"
 
 from .models.cdm import (
     CDMEvent,
@@ -90,6 +92,37 @@ def _severity(value: str) -> Severity:
         return Severity(value)
     except ValueError:
         return Severity.HIGH
+
+
+async def coverage_report(pool, tenant_id: str, expected_detections: list[str]) -> dict[str, Any]:
+    """Purple-team verdict: are the scenario's detections actually deployed for
+    this tenant? Cross-references the expected detections against the tenant's
+    active detection_versions (plus the platform/curated fallback) — a coverage
+    gap means the simulated technique would go undetected.
+    """
+    active: set[str] = set()
+    try:
+        tid = UUID(tenant_id)
+    except (ValueError, TypeError):
+        tid = None
+    if tid is not None and pool is not None:
+        rows = await pool.fetch(
+            "SELECT DISTINCT detection_id FROM detection_versions "
+            "WHERE status='active' AND tenant_id = ANY($1::uuid[])",
+            [tid, UUID(PLATFORM_TENANT)],
+        )
+        active = {r["detection_id"] for r in rows}
+    results = [{"detection_id": d, "covered": d in active} for d in expected_detections]
+    covered = sum(1 for r in results if r["covered"])
+    total = len(expected_detections)
+    return {
+        "results": results,
+        "covered": covered,
+        "total": total,
+        "coverage_pct": round(covered / total, 3) if total else 0.0,
+        "verdict": "pass" if (total and covered == total) else ("partial" if covered else "fail"),
+        "gaps": [r["detection_id"] for r in results if not r["covered"]],
+    }
 
 
 def build_events(

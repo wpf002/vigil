@@ -19,10 +19,28 @@ from typing import Optional
 
 import asyncpg
 import bcrypt
+import jwt
 import structlog
 from fastapi import HTTPException
 
 from .config import get_config
+
+
+def _authenticate_jwt(token: str) -> str:
+    """Validate a user JWT (HS256, shared AUTH_SECRET) and return its tenant_id.
+    Lets the analyst UI call ingest/simulation endpoints with the same session
+    token it uses everywhere else."""
+    secret = get_config().auth_secret
+    if not secret:
+        raise HTTPException(status_code=401, detail="invalid credential")
+    try:
+        payload = jwt.decode(token, secret, algorithms=["HS256"])
+    except Exception:
+        raise HTTPException(status_code=401, detail="invalid token")
+    tenant_id = payload.get("tenant_id")
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="token missing tenant_id")
+    return str(tenant_id)
 
 logger = structlog.get_logger(__name__)
 
@@ -65,10 +83,12 @@ async def authenticate(authorization: Optional[str]) -> str:
     unreachable.
     """
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="missing bearer api key")
+        raise HTTPException(status_code=401, detail="missing bearer token")
     raw = authorization[7:].strip()
+    # Two accepted credentials: a vgl_ API key (machine/SDK) or a user JWT
+    # (the analyst UI). Both resolve to a tenant.
     if not raw.startswith("vgl_"):
-        raise HTTPException(status_code=401, detail="invalid api key format")
+        return _authenticate_jwt(raw)
 
     cached = _verified_cache.get(raw)
     if cached is not None:
@@ -98,6 +118,15 @@ async def authenticate(authorization: Optional[str]) -> str:
             return tenant_id
 
     raise HTTPException(status_code=401, detail="invalid api key")
+
+
+async def get_pool_optional() -> Optional[asyncpg.Pool]:
+    """Best-effort pool accessor for read-only lookups (e.g. coverage report).
+    Returns None instead of raising if the key store is not configured."""
+    try:
+        return await _get_pool()
+    except Exception:
+        return None
 
 
 async def close_pool() -> None:

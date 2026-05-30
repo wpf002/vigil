@@ -52,6 +52,10 @@ class IngestorConfig(BaseSettings):
     # pool is opened lazily on first authenticated request.
     database_url: Optional[str] = None
 
+    # Shared JWT secret — lets the analyst UI authenticate to ingest/simulation
+    # endpoints with a user session token (HS256), same as the other services.
+    auth_secret: Optional[str] = None
+
 
 _config: Optional[IngestorConfig] = None
 
