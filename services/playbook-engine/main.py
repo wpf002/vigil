@@ -23,7 +23,7 @@ from temporalio.client import Client as TemporalClient
 from .auth import TenantPrincipal, get_principal
 from .config import PlaybookEngineConfig, get_config
 from .dispatcher import dispatch_playbook, fetch_attack_state
-from .narrative_loader import Narrative, load_narratives
+from .narrative_loader import Narrative, classify_kind, load_narratives
 from .store import PlaybookStore
 
 logger = structlog.get_logger(__name__)
@@ -252,6 +252,155 @@ async def run_playbook(
     if result is None:
         return err("No playbook matches this attack's current phase/status", code=422)
     return ok(result)
+
+
+# ── playbook definitions (build-a-playbook) ───────────────────────────────────
+
+class ActionInput(BaseModel):
+    action_type: str
+    target: str = "affected_host"
+    kind: Optional[str] = None  # inferred from action_type when omitted
+    priority: str = "immediate"  # immediate | follow_up
+    automated: bool = False
+    description: str = ""
+
+
+class PlaybookDefinitionInput(BaseModel):
+    name: str
+    actions: list[ActionInput] = Field(default_factory=list)
+    trigger_mode: str = "auto"
+    trigger_phase: Optional[str] = None
+    trigger_status: Optional[str] = None
+    min_confidence: float = 0.0
+    trigger_detection_id: Optional[str] = None
+    enabled: bool = True
+
+
+class PlaybookDefinitionUpdate(BaseModel):
+    name: Optional[str] = None
+    actions: Optional[list[ActionInput]] = None
+    trigger_mode: Optional[str] = None
+    trigger_phase: Optional[str] = None
+    trigger_status: Optional[str] = None
+    min_confidence: Optional[float] = None
+    trigger_detection_id: Optional[str] = None
+    enabled: Optional[bool] = None
+
+
+def _require_admin(principal: TenantPrincipal) -> None:
+    if principal.role != "admin":
+        raise HTTPException(status_code=403, detail="admin role required")
+
+
+def _normalize_action(a: ActionInput) -> dict[str, Any]:
+    return {
+        "action_type": a.action_type,
+        "target": a.target,
+        "kind": a.kind or classify_kind(a.action_type),
+        "priority": a.priority,
+        "automated": a.automated,
+        "description": a.description,
+    }
+
+
+def _created_by_uuid(principal: TenantPrincipal) -> Optional[UUID]:
+    try:
+        return UUID(principal.user_id)
+    except (ValueError, TypeError):
+        return None
+
+
+@app.get("/playbook-definitions")
+async def list_playbook_definitions(
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    defs = await store.list_definitions(tenant)
+    return ok([_serialize_definition(d) for d in defs], count=len(defs))
+
+
+@app.post("/playbook-definitions")
+async def create_playbook_definition(
+    body: PlaybookDefinitionInput,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    _require_admin(principal)
+    tenant = _tenant_uuid(principal)
+    d = await store.create_definition(
+        tenant_id=tenant,
+        name=body.name,
+        actions=[_normalize_action(a) for a in body.actions],
+        trigger_mode=body.trigger_mode,
+        trigger_phase=body.trigger_phase,
+        trigger_status=body.trigger_status,
+        min_confidence=body.min_confidence,
+        trigger_detection_id=body.trigger_detection_id,
+        enabled=body.enabled,
+        created_by=_created_by_uuid(principal),
+    )
+    return ok(_serialize_definition(d))
+
+
+@app.get("/playbook-definitions/{definition_id}")
+async def get_playbook_definition(
+    definition_id: UUID,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    d = await store.get_definition(definition_id, _tenant_uuid(principal))
+    if d is None:
+        return err("Definition not found", code=404)
+    return ok(_serialize_definition(d))
+
+
+@app.patch("/playbook-definitions/{definition_id}")
+async def update_playbook_definition(
+    definition_id: UUID,
+    body: PlaybookDefinitionUpdate,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    _require_admin(principal)
+    tenant = _tenant_uuid(principal)
+    fields = body.model_dump(exclude_none=True)
+    if body.actions is not None:
+        fields["actions"] = [_normalize_action(a) for a in body.actions]
+    d = await store.update_definition(definition_id, tenant, **fields)
+    if d is None:
+        return err("Definition not found", code=404)
+    return ok(_serialize_definition(d))
+
+
+@app.delete("/playbook-definitions/{definition_id}")
+async def delete_playbook_definition(
+    definition_id: UUID,
+    principal: TenantPrincipal = Depends(get_principal),
+    store: PlaybookStore = Depends(get_store),
+):
+    _require_admin(principal)
+    deleted = await store.delete_definition(definition_id, _tenant_uuid(principal))
+    if not deleted:
+        return err("Definition not found", code=404)
+    return ok({"definition_id": str(definition_id), "deleted": True})
+
+
+def _serialize_definition(d: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "definition_id": str(d["definition_id"]),
+        "tenant_id": str(d["tenant_id"]),
+        "name": d["name"],
+        "enabled": d["enabled"],
+        "trigger_mode": d["trigger_mode"],
+        "trigger_phase": d.get("trigger_phase"),
+        "trigger_status": d.get("trigger_status"),
+        "min_confidence": d["min_confidence"],
+        "trigger_detection_id": d.get("trigger_detection_id"),
+        "actions": d.get("actions") or [],
+        "created_at": d["created_at"].isoformat() if d.get("created_at") else None,
+        "updated_at": d["updated_at"].isoformat() if d.get("updated_at") else None,
+    }
 
 
 @app.get("/narratives")

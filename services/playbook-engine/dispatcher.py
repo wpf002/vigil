@@ -18,7 +18,12 @@ import structlog
 from temporalio.client import Client as TemporalClient
 
 from .config import PlaybookEngineConfig
-from .narrative_loader import Narrative, render_actions_for, select_playbook
+from .narrative_loader import (
+    Narrative,
+    playbook_from_definition,
+    render_actions_for,
+    select_playbook,
+)
 from .store import PlaybookStore
 from .workflows.response_workflow import ResponseWorkflow, ResponseWorkflowInput
 
@@ -101,8 +106,22 @@ async def dispatch_playbook(
         for e in (attack_state.get("evidence") or [])
         if isinstance(e, dict) and e.get("detection_id")
     ]
+
+    # Merge the tenant's authored (DB) playbooks with the static YAML library.
+    all_narratives = list(narratives)
+    try:
+        defs = await store.list_enabled_definitions(tenant_id)
+    except Exception as e:
+        logger.warning("playbook.definitions_unavailable", error=str(e))
+        defs = []
+    if defs:
+        all_narratives.append(Narrative(
+            narrative_id="__custom__", name="Custom Playbooks", phases=[], raw={},
+            playbooks=[playbook_from_definition(d) for d in defs],
+        ))
+
     playbook = select_playbook(
-        narratives, phase=phase, status=status, confidence=confidence,
+        all_narratives, phase=phase, status=status, confidence=confidence,
         mode=trigger, detection_ids=detection_ids or None,
     )
     if playbook is None:

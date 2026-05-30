@@ -143,6 +143,94 @@ class PlaybookStore:
         return [_decode(r) for r in rows]
 
 
+    # ── playbook_definitions (authored playbooks) ─────────────────────────
+
+    async def create_definition(
+        self,
+        *,
+        tenant_id: UUID,
+        name: str,
+        actions: list[dict[str, Any]],
+        trigger_mode: str = "auto",
+        trigger_phase: Optional[str] = None,
+        trigger_status: Optional[str] = None,
+        min_confidence: float = 0.0,
+        trigger_detection_id: Optional[str] = None,
+        enabled: bool = True,
+        created_by: Optional[UUID] = None,
+    ) -> dict[str, Any]:
+        sql = """
+            INSERT INTO playbook_definitions (
+                tenant_id, name, enabled, trigger_mode, trigger_phase,
+                trigger_status, min_confidence, trigger_detection_id, actions, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
+            RETURNING *
+        """
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                sql, tenant_id, name, enabled, trigger_mode, trigger_phase,
+                trigger_status, min_confidence, trigger_detection_id,
+                json.dumps(actions), created_by,
+            )
+        return _decode(row)
+
+    async def list_definitions(self, tenant_id: UUID) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM playbook_definitions WHERE tenant_id=$1 ORDER BY created_at DESC",
+                tenant_id,
+            )
+        return [_decode(r) for r in rows]
+
+    async def list_enabled_definitions(self, tenant_id: UUID) -> list[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM playbook_definitions WHERE tenant_id=$1 AND enabled=TRUE",
+                tenant_id,
+            )
+        return [_decode(r) for r in rows]
+
+    async def get_definition(self, definition_id: UUID, tenant_id: UUID) -> Optional[dict[str, Any]]:
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM playbook_definitions WHERE definition_id=$1 AND tenant_id=$2",
+                definition_id, tenant_id,
+            )
+        return _decode(row) if row else None
+
+    async def update_definition(
+        self, definition_id: UUID, tenant_id: UUID, **fields: Any
+    ) -> Optional[dict[str, Any]]:
+        allowed = {
+            "name", "enabled", "trigger_mode", "trigger_phase", "trigger_status",
+            "min_confidence", "trigger_detection_id", "actions",
+        }
+        sets, args = [], []
+        for k, v in fields.items():
+            if k not in allowed or v is None:
+                continue
+            args.append(json.dumps(v) if k == "actions" else v)
+            cast = "::jsonb" if k == "actions" else ""
+            sets.append(f"{k}=${len(args)}{cast}")
+        if not sets:
+            return await self.get_definition(definition_id, tenant_id)
+        sets.append("updated_at=now()")
+        args.extend([definition_id, tenant_id])
+        sql = (f"UPDATE playbook_definitions SET {', '.join(sets)} "
+               f"WHERE definition_id=${len(args)-1} AND tenant_id=${len(args)} RETURNING *")
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(sql, *args)
+        return _decode(row) if row else None
+
+    async def delete_definition(self, definition_id: UUID, tenant_id: UUID) -> bool:
+        async with self.pool.acquire() as conn:
+            res = await conn.execute(
+                "DELETE FROM playbook_definitions WHERE definition_id=$1 AND tenant_id=$2",
+                definition_id, tenant_id,
+            )
+        return res.endswith("1")
+
+
 def _decode(row: asyncpg.Record) -> dict[str, Any]:
     """asyncpg returns JSONB as str when no codec is registered. Decode it."""
     d = dict(row)
@@ -153,6 +241,6 @@ def _decode(row: asyncpg.Record) -> dict[str, Any]:
                 d[k] = json.loads(v)
             except json.JSONDecodeError:
                 d[k] = []
-        elif v is None:
+        elif v is None and k in d:
             d[k] = []
     return d

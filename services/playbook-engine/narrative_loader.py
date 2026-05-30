@@ -151,6 +151,50 @@ def _build_playbook(narrative_id: str, pb_name: str, pb_node: dict[str, Any]) ->
     )
 
 
+def playbook_from_definition(d: dict[str, Any]) -> Playbook:
+    """Convert a DB playbook_definitions row into a runnable Playbook.
+
+    Each action dict carries {action_type, target, kind, priority, automated,
+    description}; we split them into enrichment / immediate / follow_up to
+    match the YAML-sourced shape.
+    """
+    enrichment: list[PlaybookAction] = []
+    immediate: list[PlaybookAction] = []
+    follow_up: list[PlaybookAction] = []
+    for a in (d.get("actions") or []):
+        if not isinstance(a, dict):
+            continue
+        action_type = str(a.get("action_type") or a.get("action") or "unknown")
+        kind = str(a.get("kind") or classify_kind(action_type))
+        pa = PlaybookAction(
+            action_type=action_type,
+            target=str(a.get("target") or a.get("target_entity") or "unknown"),
+            automated=bool(a.get("automated", kind == "enrichment")),
+            protocol=a.get("protocol"),
+            description=str(a.get("description") or ""),
+            kind=kind,
+        )
+        if kind == "enrichment":
+            enrichment.append(pa)
+        elif str(a.get("priority")) == "follow_up":
+            follow_up.append(pa)
+        else:
+            immediate.append(pa)
+    return Playbook(
+        narrative_id=str(d.get("name") or d.get("definition_id") or "custom"),
+        playbook_name=str(d.get("name") or "custom"),
+        trigger=f"custom:{d.get('name')}",
+        trigger_mode=str(d.get("trigger_mode") or "auto"),
+        trigger_phase=d.get("trigger_phase"),
+        trigger_status=d.get("trigger_status"),
+        min_confidence=float(d.get("min_confidence") or 0.0),
+        trigger_detection_id=d.get("trigger_detection_id"),
+        enrichment=enrichment,
+        immediate=immediate,
+        follow_up=follow_up,
+    )
+
+
 def load_narratives(narratives_path: Path) -> list[Narrative]:
     """Read every *.yaml file from the narratives directory."""
     if not narratives_path.exists():
