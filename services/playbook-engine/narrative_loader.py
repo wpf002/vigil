@@ -9,6 +9,7 @@ narrative library we ship today.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional
@@ -63,10 +64,50 @@ class PlaybookAction:
 class Playbook:
     narrative_id: str
     playbook_name: str
-    trigger: str
+    trigger: str  # raw/display form
+    # Structured trigger condition (parsed from the string or a YAML dict).
+    trigger_mode: str = "auto"          # "auto" fires on the pipeline; "manual" only on demand
+    trigger_phase: Optional[str] = None
+    trigger_status: Optional[str] = None
+    min_confidence: float = 0.0
+    trigger_detection_id: Optional[str] = None
     enrichment: list[PlaybookAction] = field(default_factory=list)
     immediate: list[PlaybookAction] = field(default_factory=list)
     follow_up: list[PlaybookAction] = field(default_factory=list)
+
+
+_TRIG_PHASE = re.compile(r"phase\s*[=:]\s*([a-z0-9\-_]+)", re.I)
+_TRIG_STATUS = re.compile(r"status\s*[=:]\s*([a-z]+)", re.I)
+_TRIG_CONF = re.compile(r"confidence\s*>=?\s*([0-9.]+)", re.I)
+
+
+def _parse_trigger(value: Any) -> dict[str, Any]:
+    """Parse a playbook trigger into structured fields.
+
+    Accepts either the legacy free-text string
+    (``phase=credential-access AND status=Confirmed AND confidence>=0.65``)
+    or a YAML mapping (``{mode, phase, status, min_confidence, detection_id}``).
+    """
+    if isinstance(value, dict):
+        conf = value.get("min_confidence", value.get("confidence", 0.0))
+        return {
+            "raw": str(value.get("raw") or value),
+            "mode": str(value.get("mode") or "auto").lower(),
+            "phase": value.get("phase"),
+            "status": value.get("status"),
+            "min_confidence": float(conf or 0.0),
+            "detection_id": value.get("detection_id"),
+        }
+    s = str(value or "")
+    m_phase, m_status, m_conf = _TRIG_PHASE.search(s), _TRIG_STATUS.search(s), _TRIG_CONF.search(s)
+    return {
+        "raw": s,
+        "mode": "manual" if "manual" in s.lower() else "auto",
+        "phase": m_phase.group(1) if m_phase else None,
+        "status": m_status.group(1) if m_status else None,
+        "min_confidence": float(m_conf.group(1)) if m_conf else 0.0,
+        "detection_id": None,
+    }
 
 
 @dataclass
@@ -89,6 +130,24 @@ def _load_action(node: dict[str, Any], *, force_kind: Optional[str] = None) -> P
         protocol=node.get("protocol"),
         description=str(node.get("description") or ""),
         kind=kind,
+    )
+
+
+def _build_playbook(narrative_id: str, pb_name: str, pb_node: dict[str, Any]) -> Playbook:
+    trig = _parse_trigger(pb_node.get("trigger"))
+    return Playbook(
+        narrative_id=narrative_id,
+        playbook_name=pb_name,
+        trigger=trig["raw"],
+        trigger_mode=trig["mode"],
+        trigger_phase=trig["phase"],
+        trigger_status=trig["status"],
+        min_confidence=trig["min_confidence"],
+        trigger_detection_id=trig["detection_id"],
+        enrichment=[_load_action(a, force_kind="enrichment")
+                    for a in (pb_node.get("enrichment") or []) if isinstance(a, dict)],
+        immediate=[_load_action(a) for a in (pb_node.get("immediate") or []) if isinstance(a, dict)],
+        follow_up=[_load_action(a) for a in (pb_node.get("follow_up") or []) if isinstance(a, dict)],
     )
 
 
@@ -117,15 +176,7 @@ def load_narratives(narratives_path: Path) -> list[Narrative]:
             if not isinstance(pb_node, dict):
                 continue
             playbooks.append(
-                Playbook(
-                    narrative_id=narrative_id,
-                    playbook_name=pb_name,
-                    trigger=str(pb_node.get("trigger") or ""),
-                    enrichment=[_load_action(a, force_kind="enrichment")
-                                for a in (pb_node.get("enrichment") or []) if isinstance(a, dict)],
-                    immediate=[_load_action(a) for a in (pb_node.get("immediate") or []) if isinstance(a, dict)],
-                    follow_up=[_load_action(a) for a in (pb_node.get("follow_up") or []) if isinstance(a, dict)],
-                )
+                _build_playbook(narrative_id, pb_name, pb_node)
             )
 
         out.append(
@@ -146,21 +197,31 @@ def select_playbook(
     phase: str,
     status: Optional[str] = None,
     confidence: float = 0.0,
+    mode: str = "auto",
+    detection_ids: Optional[list[str]] = None,
 ) -> Optional[Playbook]:
     """Pick the most-specific playbook matching the AttackState.
 
-    Strategy: a playbook matches if its trigger string contains the phase
-    name; status (if known) further narrows the choice. Among matches we
-    prefer ones that mention 'Confirmed' status when status is Confirmed.
-    Higher confidence-threshold matches beat lower ones.
+    `mode="auto"` is the pipeline path: it considers only auto-trigger
+    playbooks and strictly enforces their structured conditions (phase, status,
+    min_confidence, detection_id). `mode="manual"` is the on-demand path: it
+    considers every playbook and matches leniently (phase only — confidence and
+    status are not gates), so an analyst can run a playbook regardless of the
+    attack's current confidence.
     """
+    strict = mode == "auto"
     candidates: list[tuple[float, Playbook]] = []
     for n in narratives:
         # Cheap pre-filter: skip narratives that don't include this phase at all.
         if n.phases and phase not in n.phases:
             continue
         for pb in n.playbooks:
-            score = _score_playbook(pb, phase=phase, status=status)
+            if strict and pb.trigger_mode == "manual":
+                continue  # manual-only playbooks never auto-fire
+            score = _score_playbook(
+                pb, phase=phase, status=status, confidence=confidence,
+                strict=strict, detection_ids=detection_ids,
+            )
             if score > 0:
                 candidates.append((score, pb))
 
@@ -170,10 +231,42 @@ def select_playbook(
     return candidates[0][1]
 
 
-def _score_playbook(pb: Playbook, *, phase: str, status: Optional[str]) -> float:
+def _score_playbook(
+    pb: Playbook,
+    *,
+    phase: str,
+    status: Optional[str],
+    confidence: float = 0.0,
+    strict: bool = True,
+    detection_ids: Optional[list[str]] = None,
+) -> float:
+    # Structured matching when the trigger declares a phase.
+    if pb.trigger_phase:
+        if pb.trigger_phase.lower() != phase.lower():
+            return 0.0
+        if strict and confidence < pb.min_confidence:
+            return 0.0
+        if pb.trigger_detection_id and detection_ids is not None \
+                and pb.trigger_detection_id not in detection_ids:
+            return 0.0
+        score = 1.0
+        if pb.trigger_status:
+            if status and pb.trigger_status.lower() == status.lower():
+                score += 0.5
+            elif strict:
+                return 0.0  # auto path requires the declared status to match
+        # more-specific triggers (status / detection constraints) rank higher
+        if pb.trigger_detection_id:
+            score += 0.25
+        if pb.min_confidence:
+            score += min(pb.min_confidence, 0.99) * 0.1
+        return score
+
+    # Legacy substring fallback (directly-constructed playbooks / unparseable).
     trig = pb.trigger.lower()
     score = 0.0
-    if phase.lower() in trig or phase.replace("-", "_").lower() in trig or phase.lower() in pb.playbook_name.lower():
+    if phase.lower() in trig or phase.replace("-", "_").lower() in trig \
+            or phase.lower() in pb.playbook_name.lower():
         score += 1.0
     if status and status.lower() in trig:
         score += 0.5

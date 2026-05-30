@@ -96,7 +96,15 @@ async def dispatch_playbook(
             status = str(ph.get("status") or status)
             break
 
-    playbook = select_playbook(narratives, phase=phase, status=status, confidence=confidence)
+    detection_ids = [
+        e.get("detection_id")
+        for e in (attack_state.get("evidence") or [])
+        if isinstance(e, dict) and e.get("detection_id")
+    ]
+    playbook = select_playbook(
+        narratives, phase=phase, status=status, confidence=confidence,
+        mode=trigger, detection_ids=detection_ids or None,
+    )
     if playbook is None:
         logger.info("playbook.no_match", phase=phase, status=status, trigger=trigger)
         return None
