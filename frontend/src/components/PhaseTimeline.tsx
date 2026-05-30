@@ -57,8 +57,18 @@ export function PhaseTimeline({ phases, currentPhase, predictedNextPhase }: Prop
                   <ChevronRight size={11} />
                 )}
               </div>
-              <div className="font-mono text-[9px] opacity-70">
-                {ps ? ps.status : isPredicted ? "Predicted" : "—"}
+              <div className="font-mono text-[9px] opacity-70 flex items-center justify-between gap-2">
+                <span>{ps ? ps.status : isPredicted ? "Predicted" : "—"}</span>
+                {ps && ps.evidence_ids.length > 0 && (
+                  <span
+                    className="tabular-nums"
+                    title={`${ps.evidence_ids.length} detection${
+                      ps.evidence_ids.length === 1 ? "" : "s"
+                    } fired`}
+                  >
+                    {ps.evidence_ids.length}×
+                  </span>
+                )}
               </div>
             </li>
           );

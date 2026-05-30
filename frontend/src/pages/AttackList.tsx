@@ -1,18 +1,32 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { listAttacks } from "@/api/attacks";
 import { AttackCard } from "@/components/AttackCard";
 import { StatsBanner } from "@/components/StatsBanner";
-import { useAttackStore } from "@/store/attackStore";
 import { PHASE_ORDER } from "@/types/attacks";
-import type { MITRETactic, Momentum } from "@/types/attacks";
+import type { AttackListFilters, MITRETactic, Momentum } from "@/types/attacks";
 import { phaseLabel } from "@/lib/format";
 
+const EMPTY_FILTERS: AttackListFilters = {
+  phase: null,
+  min_confidence: 0,
+  momentum: null,
+  limit: 50,
+  offset: 0,
+};
+
 export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
-  const filters = useAttackStore((s) => s.filters);
-  const setPhaseFilter = useAttackStore((s) => s.setPhaseFilter);
-  const setMomentumFilter = useAttackStore((s) => s.setMomentumFilter);
-  const setMinConfidence = useAttackStore((s) => s.setMinConfidence);
-  const resetFilters = useAttackStore((s) => s.resetFilters);
+  // Filters are local to this view instance so the Active and Resolved lists
+  // never share filter state (previously a global store leaked Active filters
+  // into the Resolved query, hiding resolved attacks).
+  const [filters, setFilters] = useState<AttackListFilters>(EMPTY_FILTERS);
+  const setPhaseFilter = (phase: MITRETactic | null) =>
+    setFilters((f) => ({ ...f, phase }));
+  const setMomentumFilter = (momentum: Momentum | null) =>
+    setFilters((f) => ({ ...f, momentum }));
+  const setMinConfidence = (value: number) =>
+    setFilters((f) => ({ ...f, min_confidence: value }));
+  const resetFilters = () => setFilters(EMPTY_FILTERS);
 
   const filtersActive =
     filters.phase != null ||

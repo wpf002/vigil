@@ -49,7 +49,10 @@ export function EvidenceList({ evidence }: Props) {
                 </span>
               )}
             </div>
-            <div className="text-sm font-mono text-fg truncate">
+            <div
+              className="text-sm font-mono text-fg truncate"
+              title={item.raw_reference ?? undefined}
+            >
               {item.rule_name ?? item.detection_id ?? "Unknown rule"}
             </div>
             <div className="mt-1 text-[11px] text-fg-faint font-mono space-x-3">
@@ -58,7 +61,6 @@ export function EvidenceList({ evidence }: Props) {
                 <span className="text-fg-muted">{item.entity_value}</span>
               </span>
               <span>{item.source_siem}</span>
-              {item.raw_reference && <span>{item.raw_reference}</span>}
             </div>
           </div>
 

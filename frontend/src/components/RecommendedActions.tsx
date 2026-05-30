@@ -1,5 +1,6 @@
 import { CheckCircle2, Circle, Clock } from "lucide-react";
 import type { ResponseAction } from "@/types/attacks";
+import { titleCase } from "@/lib/format";
 
 interface Props {
   actions: ResponseAction[];
@@ -98,7 +99,7 @@ function ActionGroup({
                 {action.description}
               </div>
               <div className="text-xs text-fg-muted mt-0.5 flex items-center gap-2">
-                <span className="opacity-70">{action.action_type}</span>
+                <span className="opacity-70">{titleCase(action.action_type)}</span>
                 <span className="opacity-50">→</span>
                 <span>{action.target_entity}</span>
                 {action.automated && (

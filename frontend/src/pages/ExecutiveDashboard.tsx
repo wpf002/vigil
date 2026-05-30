@@ -19,8 +19,26 @@ import { getExecutiveSummary, getExecutiveTrend } from "@/api/reporting";
 import { titleCase } from "@/lib/format";
 
 const ACCENT = "#dc2626";
-const ACCENT_DIM = "#7f1d1d";
 const FG_FAINT = "#52525b";
+
+// On-schema palette for the phase donut — stays in the red/amber brand family
+// (only red is loud) with one muted slate, so up to 14 phases stay distinct.
+const PHASE_PALETTE = [
+  "#dc2626", // accent
+  "#f97316", // orange
+  "#991b1b", // accent-soft
+  "#ca8a04", // warning amber
+  "#ef4444", // accent-hover
+  "#b91c1c",
+  "#fb7185", // rose
+  "#7f1d1d", // accent-dim
+  "#f59e0b",
+  "#e11d48",
+  "#a16207",
+  "#9f1239",
+  "#fca5a5",
+  "#64748b", // muted slate
+];
 
 export function ExecutiveDashboard() {
   const summary = useQuery({
@@ -122,7 +140,7 @@ export function ExecutiveDashboard() {
                 stroke="#0a0a0a"
               >
                 {phaseData.map((_, i) => (
-                  <Cell key={i} fill={i % 2 === 0 ? ACCENT : ACCENT_DIM} />
+                  <Cell key={i} fill={PHASE_PALETTE[i % PHASE_PALETTE.length]} />
                 ))}
               </Pie>
               <Tooltip
@@ -161,7 +179,7 @@ export function ExecutiveDashboard() {
                 stroke={FG_FAINT}
                 fontSize={10}
                 width={44}
-                tickFormatter={(v: number) => formatDuration(v)}
+                tickFormatter={(v: number) => formatDuration(v, true)}
               />
               <Tooltip
                 contentStyle={{
@@ -238,11 +256,12 @@ function Stat({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function formatDuration(seconds: number): string {
+function formatDuration(seconds: number, coarse = false): string {
+  const d = (n: number) => (coarse ? Math.round(n).toString() : n.toFixed(1));
   if (seconds < 60) return `${seconds.toFixed(0)}s`;
   const m = seconds / 60;
   if (m < 60) return `${m.toFixed(0)}m`;
   const h = m / 60;
-  if (h < 24) return `${h.toFixed(1)}h`;
-  return `${(h / 24).toFixed(1)}d`;
+  if (h < 24) return `${d(h)}h`;
+  return `${d(h / 24)}d`;
 }

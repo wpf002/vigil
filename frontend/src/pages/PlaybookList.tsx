@@ -76,7 +76,6 @@ export function PlaybookList() {
           <table className="w-full text-sm font-mono">
             <thead className="bg-surface-2 border-b border-border">
               <tr className="text-left text-[11px] uppercase tracking-wider text-fg-faint">
-                <th className="px-3 py-2">Narrative</th>
                 <th className="px-3 py-2">Phase at Trigger</th>
                 <th className="px-3 py-2 text-right">Confidence</th>
                 <th className="px-3 py-2">Status</th>
@@ -122,7 +121,6 @@ function PlaybookRow({
       onClick={onClick}
       className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer transition-colors"
     >
-      <td className="px-3 py-2 text-fg">{run.narrative_id ?? "—"}</td>
       <td className="px-3 py-2 text-fg-muted">{titleCase(run.phase_at_trigger)}</td>
       <td className="px-3 py-2 text-right tabular-nums text-fg">
         {pct(run.confidence_at_trigger)}

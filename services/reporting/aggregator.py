@@ -282,9 +282,11 @@ class Aggregator:
             if isinstance(queue, list):
                 open_items = [q for q in queue if (q.get("status") or "").lower() != "resolved"]
                 out["open_escalations"] = len(open_items)
-                breaches = sum(1 for q in queue if q.get("sla_breached"))
-                if queue:
-                    out["sla_breach_rate_7d"] = round(breaches / len(queue), 4)
+                # NOTE: sla_breach_rate_7d is owned solely by _collect_attacks
+                # (high-confidence attacks past the 4h SLA). We deliberately do
+                # NOT recompute it from the escalation queue's per-item
+                # `sla_breached` flag here — doing so silently redefined the KPI
+                # whenever the analyst-portal /queue was reachable.
         except Exception as e:
             logger.warning("reporting.escalations.unreachable", error=str(e))
 

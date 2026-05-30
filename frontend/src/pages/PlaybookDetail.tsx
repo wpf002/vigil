@@ -78,15 +78,14 @@ export function PlaybookDetail() {
           <div className="vigil-card p-4 mb-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-[11px] font-mono text-fg-faint uppercase tracking-wider">
-                  {run.narrative_id ?? "Untitled narrative"}
-                </div>
-                <h1 className="text-xl font-mono text-fg mt-1">
+                <h1
+                  className="text-xl font-mono text-fg"
+                  title={`Temporal workflow: ${run.workflow_id}`}
+                >
                   Run {run.run_id.slice(0, 8)}
                 </h1>
                 <div className="text-[11px] font-mono text-fg-muted mt-1">
-                  workflow {run.workflow_id} •{" "}
-                  {run.triggered_at ? timeAgo(run.triggered_at) : "—"}
+                  Triggered {run.triggered_at ? timeAgo(run.triggered_at) : "—"}
                 </div>
               </div>
               <div className="flex flex-col items-end gap-1">
