@@ -7,6 +7,7 @@ import { DetectionLibrary } from "@/pages/DetectionLibrary";
 import { DetectionDetail } from "@/pages/DetectionDetail";
 import { PlaybookList } from "@/pages/PlaybookList";
 import { PlaybookDetail } from "@/pages/PlaybookDetail";
+import { PlaybookBuilder } from "@/pages/PlaybookBuilder";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { MarketplacePage } from "@/pages/MarketplacePage";
@@ -52,6 +53,7 @@ export function App() {
                 <Route path="/pipeline" element={<PipelinePage />} />
                 <Route path="/settings" element={<Navigate to="/settings/api-keys" replace />} />
                 <Route path="/playbooks" element={<PlaybookList />} />
+                <Route path="/playbooks/build" element={<PlaybookBuilder />} />
                 <Route path="/playbooks/:id" element={<PlaybookDetail />} />
                 <Route
                   path="*"

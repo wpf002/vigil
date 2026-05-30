@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ListChecks, Pause, Square } from "lucide-react";
+import { ListChecks, Pause, Square, Wrench } from "lucide-react";
 import {
   abortPlaybook,
   listPlaybooks,
@@ -57,6 +57,13 @@ export function PlaybookList() {
         <span className="ml-auto text-[11px] font-mono text-fg-faint tabular-nums">
           {runs.length} {runs.length === 1 ? "Run" : "Runs"}
         </span>
+        <button
+          type="button"
+          onClick={() => navigate("/playbooks/build")}
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono border border-border-strong bg-surface-2 text-fg-muted rounded-sm hover:text-fg hover:border-accent/40"
+        >
+          <Wrench size={12} /> Build Playbook
+        </button>
       </div>
 
       {query.isLoading ? (

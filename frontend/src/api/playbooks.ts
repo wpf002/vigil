@@ -138,3 +138,69 @@ export async function listNarratives(): Promise<NarrativeSummary[]> {
   const res = await playbookClient.get<ApiEnvelope<NarrativeSummary[]>>("/narratives");
   return unwrap(res.data);
 }
+
+// ── authored playbook definitions (build-a-playbook) ───────────────────────
+
+export interface DefinitionAction {
+  action_type: string;
+  target: string;
+  kind?: string;
+  priority?: string;
+  automated?: boolean;
+  description?: string;
+}
+
+export interface PlaybookDefinition {
+  definition_id: string;
+  name: string;
+  enabled: boolean;
+  trigger_mode: string;
+  trigger_phase: string | null;
+  trigger_status: string | null;
+  min_confidence: number;
+  trigger_detection_id: string | null;
+  actions: DefinitionAction[];
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface PlaybookDefinitionInput {
+  name: string;
+  trigger_mode: string;
+  trigger_phase?: string | null;
+  trigger_status?: string | null;
+  min_confidence?: number;
+  trigger_detection_id?: string | null;
+  actions: DefinitionAction[];
+  enabled?: boolean;
+}
+
+export async function listPlaybookDefinitions(): Promise<PlaybookDefinition[]> {
+  const res = await playbookClient.get<ApiEnvelope<PlaybookDefinition[]>>("/playbook-definitions");
+  return unwrap(res.data);
+}
+
+export async function createPlaybookDefinition(
+  input: PlaybookDefinitionInput,
+): Promise<PlaybookDefinition> {
+  const res = await playbookClient.post<ApiEnvelope<PlaybookDefinition>>(
+    "/playbook-definitions",
+    input,
+  );
+  return unwrap(res.data);
+}
+
+export async function updatePlaybookDefinition(
+  id: string,
+  patch: Partial<PlaybookDefinitionInput>,
+): Promise<PlaybookDefinition> {
+  const res = await playbookClient.patch<ApiEnvelope<PlaybookDefinition>>(
+    `/playbook-definitions/${id}`,
+    patch,
+  );
+  return unwrap(res.data);
+}
+
+export async function deletePlaybookDefinition(id: string): Promise<void> {
+  await playbookClient.delete(`/playbook-definitions/${id}`);
+}
