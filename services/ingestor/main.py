@@ -11,12 +11,15 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 
 import structlog
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
+from . import simulation
 from .auth import authenticate, close_pool
 from .cdm_rules import DEFAULT_RULES, apply_match, best_match
 from .config import IngestorConfig, get_config
@@ -295,6 +298,50 @@ async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")
         "detection_id": event.detection_id,
         "matched_rule": matched,
         "published": True,
+    }
+
+
+class SimulationRunRequest(BaseModel):
+    scenario_id: str
+    host: Optional[str] = None
+    user: Optional[str] = None
+
+
+@app.get("/simulations/scenarios")
+async def list_simulations(authorization: str = Header(default="")):
+    """Catalog of agent-less purple-team scenarios."""
+    await authenticate(authorization)
+    return {"scenarios": simulation.list_scenarios()}
+
+
+@app.post("/simulations/run")
+async def run_simulation(body: SimulationRunRequest, authorization: str = Header(default="")):
+    """Inject a synthetic ATT&CK kill-chain into the pipeline for the caller's
+    tenant. The events flow through correlation and create a real attack —
+    no in-environment agent required.
+    """
+    tenant_id = await authenticate(authorization)
+    scenario = simulation.get_scenario(body.scenario_id)
+    if scenario is None:
+        raise HTTPException(status_code=404, detail=f"unknown scenario '{body.scenario_id}'")
+    if not engine or not engine.producer.is_connected():
+        raise HTTPException(status_code=503, detail="ingest pipeline unavailable")
+
+    events = simulation.build_events(
+        scenario, tenant_id,
+        host=body.host or "SIM-HOST-01",
+        user=body.user or "sim_user",
+    )
+    published = await engine.producer.publish_signals_batch(events)
+    return {
+        "simulation_id": uuid4().hex,
+        "scenario": scenario["id"],
+        "scenario_name": scenario["name"],
+        "tenant_id": tenant_id,
+        "emitted": len(events),
+        "published": published,
+        "expected_detections": [s[0] for s in scenario["steps"]],
+        "expected_phases": sorted({s[3] for s in scenario["steps"]}),
     }
 
 
