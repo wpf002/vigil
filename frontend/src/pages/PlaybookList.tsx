@@ -65,6 +65,11 @@ export function PlaybookList() {
           <Wrench size={12} /> Build Playbook
         </button>
       </div>
+      <p className="text-[12px] font-mono text-fg-muted mb-4 -mt-3 max-w-3xl">
+        Automated <span className="text-fg">response</span> runs — the actions
+        taken when a detection fires an attack. Author them in Build Playbook.
+        (Detections, the thing that fires, live under Detections/Marketplace.)
+      </p>
 
       {query.isLoading ? (
         <div className="vigil-card p-8 text-center text-fg-muted font-mono text-sm">

@@ -86,6 +86,12 @@ export function MarketplacePage() {
           </button>
         )}
       </div>
+      <p className="text-[12px] font-mono text-fg-muted mb-4 -mt-3 max-w-3xl">
+        Share <span className="text-fg">detection rules</span> (the logic that
+        fires on telemetry) across tenants. <b>Import</b> copies a detection into
+        your library to deploy; <b>Publish</b> lists one of yours for others.
+        Not playbooks — those are built under Playbooks.
+      </p>
 
       <div className="mb-4 flex items-center gap-2 flex-wrap">
         <input

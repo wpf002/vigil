@@ -44,6 +44,11 @@ export function DetectionLibrary() {
           {detections.length} {detections.length === 1 ? "Detection" : "Detections"}
         </span>
       </div>
+      <p className="text-[12px] font-mono text-fg-muted mb-4 -mt-3 max-w-3xl">
+        Your active <span className="text-fg">detection rules</span> — the logic
+        that fires on incoming telemetry to surface attacks. Get more from the
+        Marketplace; automate the response in Playbooks.
+      </p>
 
       {query.isLoading ? (
         <div className="vigil-card p-8 text-center text-fg-muted font-mono text-sm">
