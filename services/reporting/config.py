@@ -26,8 +26,9 @@ class ReportingConfig(BaseSettings):
 
     internal_api_key: str = "dev-internal-key-change-me"
 
-    # Cache TTL for executive summary / trend in seconds.
-    cache_ttl_seconds: int = 300
+    # Cache TTL for executive summary / trend in seconds. Kept short so the
+    # dashboard reflects new attacks (e.g. from a simulation) within ~a minute.
+    cache_ttl_seconds: int = 60
 
     # Daily snapshot schedule (UTC). Hour=0, minute=5 means 00:05 UTC.
     snapshot_hour_utc: int = 0

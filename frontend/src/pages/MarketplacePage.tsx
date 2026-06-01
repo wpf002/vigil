@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Store, Download, Star, X } from "lucide-react";
+import { Store, Download, Star, X, Trash2 } from "lucide-react";
 import {
   browseMarketplace,
   importListing,
   publishDetection,
+  withdrawListing,
 } from "@/api/marketplace";
 import { listDetections } from "@/api/detections";
 import { titleCase } from "@/lib/format";
@@ -52,6 +53,19 @@ export function MarketplacePage() {
     },
     onError: (e: Error) => {
       setToast({ msg: `Import failed: ${e.message}` });
+      setTimeout(() => setToast(null), 4000);
+    },
+  });
+
+  const withdrawMut = useMutation({
+    mutationFn: (id: string) => withdrawListing(id),
+    onSuccess: () => {
+      setToast({ msg: "Listing withdrawn from the Marketplace." });
+      qc.invalidateQueries({ queryKey: ["marketplace"] });
+      setTimeout(() => setToast(null), 3000);
+    },
+    onError: (e: Error) => {
+      setToast({ msg: `Withdraw failed: ${e.message}` });
       setTimeout(() => setToast(null), 4000);
     },
   });
@@ -126,6 +140,11 @@ export function MarketplacePage() {
               listing={l}
               onImport={() => importMut.mutate(l.listing_id)}
               importing={importMut.isPending && importMut.variables === l.listing_id}
+              canWithdraw={!l.is_curated && l.publisher_tenant_id === user?.tenant_id}
+              onWithdraw={() => {
+                if (confirm(`Withdraw "${l.name}" from the Marketplace?`))
+                  withdrawMut.mutate(l.listing_id);
+              }}
             />
           ))}
         </div>
@@ -162,10 +181,14 @@ function ListingCard({
   listing,
   onImport,
   importing,
+  canWithdraw,
+  onWithdraw,
 }: {
   listing: MarketplaceListing;
   onImport: () => void;
   importing: boolean;
+  canWithdraw: boolean;
+  onWithdraw: () => void;
 }) {
   return (
     <div className="vigil-card p-4 flex flex-col">
@@ -194,13 +217,24 @@ function ListingCard({
           <Download size={10} />
           {listing.downloads}
         </span>
-        <button
-          onClick={onImport}
-          disabled={importing}
-          className="px-2 py-1 border border-border bg-surface-2 text-fg-muted hover:text-fg hover:border-accent/40 rounded-sm disabled:opacity-50"
-        >
-          {importing ? "Importing…" : "Import"}
-        </button>
+        <div className="flex items-center gap-2">
+          {canWithdraw && (
+            <button
+              onClick={onWithdraw}
+              title="Withdraw your listing from the Marketplace"
+              className="px-2 py-1 border border-border bg-surface-2 text-fg-faint hover:text-accent hover:border-accent/40 rounded-sm inline-flex items-center gap-1"
+            >
+              <Trash2 size={11} /> Withdraw
+            </button>
+          )}
+          <button
+            onClick={onImport}
+            disabled={importing}
+            className="px-2 py-1 border border-border bg-surface-2 text-fg-muted hover:text-fg hover:border-accent/40 rounded-sm disabled:opacity-50"
+          >
+            {importing ? "Importing…" : "Import"}
+          </button>
+        </div>
       </div>
     </div>
   );

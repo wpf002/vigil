@@ -26,7 +26,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/dashboard", label: "Dashboard", icon: BarChart3, active: true },
   { to: "/attacks", label: "Active Threats", icon: ShieldAlert, active: true },
-  { to: "/history", label: "Resolved", icon: ScrollText },
+  { to: "/history", label: "Resolved", icon: ScrollText, active: true },
   { to: "/detections", label: "Detections", icon: Radar, active: true },
   { to: "/marketplace", label: "Marketplace", icon: Store, active: true },
   { to: "/playbooks", label: "Playbooks", icon: ListChecks, active: true },

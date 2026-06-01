@@ -136,7 +136,24 @@ class ResponseWorkflow:
                 retry_policy=RetryPolicy(maximum_attempts=3),
             )
 
+            # Record progress on the playbook_runs row so the UI shows each
+            # action checking off live.
+            await workflow.execute_activity(
+                response_activities.record_run_progress,
+                args=[inp.run_id, action],
+                start_to_close_timeout=timedelta(seconds=15),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+
             idx_pos += 1
+
+        # Mark the run completed so it stops showing as 'running'.
+        await workflow.execute_activity(
+            response_activities.finalize_run,
+            args=[inp.run_id, "completed"],
+            start_to_close_timeout=timedelta(seconds=15),
+            retry_policy=RetryPolicy(maximum_attempts=3),
+        )
 
         return ResponseWorkflowResult(
             completed_action_indices=completed,

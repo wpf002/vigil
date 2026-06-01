@@ -13,9 +13,11 @@ tests continue to pass.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 from typing import Any, Optional
+from uuid import UUID
 
 import structlog
 from temporalio import activity
@@ -183,6 +185,55 @@ async def notify_attack_state_complete(
         return False
 
 
+# ── run bookkeeping (write progress/status back to playbook_runs) ─────────────
+# Without these the workflow runs to completion but the playbook_runs row stays
+# 'running' with empty completed_actions, so the UI never shows progress or a
+# finished run. Each connects to DATABASE_URL per call (short-lived activity).
+
+
+@activity.defn
+async def record_run_progress(run_id: str, action: dict[str, Any]) -> bool:
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        return False
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute(
+                "UPDATE playbook_runs SET completed_actions = completed_actions || $2::jsonb "
+                "WHERE run_id = $1",
+                UUID(run_id), json.dumps([action]),
+            )
+        finally:
+            await conn.close()
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("playbook.record_progress.failed", error=str(e), run_id=run_id)
+        return False
+
+
+@activity.defn
+async def finalize_run(run_id: str, status: str) -> bool:
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        return False
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(dsn)
+        try:
+            await conn.execute(
+                "UPDATE playbook_runs SET status = $2, completed_at = now() WHERE run_id = $1",
+                UUID(run_id), status,
+            )
+        finally:
+            await conn.close()
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("playbook.finalize_run.failed", error=str(e), run_id=run_id)
+        return False
+
+
 # Registry of all activities the worker should expose. Keep this in sync
 # with the @activity.defn definitions above.
 ALL_ACTIVITIES = [
@@ -196,6 +247,8 @@ ALL_ACTIVITIES = [
     asset_context,
     user_context,
     notify_attack_state_complete,
+    record_run_progress,
+    finalize_run,
 ]
 
 
