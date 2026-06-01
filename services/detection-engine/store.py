@@ -91,6 +91,18 @@ class DetectionStore:
                 )
         return row["version_id"]
 
+    async def delete_detection(self, detection_id: str, tenant_id: UUID) -> int:
+        """Delete all of a tenant's versions for a detection. Returns rows removed."""
+        async with self.pool.acquire() as conn:
+            res = await conn.execute(
+                "DELETE FROM detection_versions WHERE detection_id=$1 AND tenant_id=$2",
+                detection_id, tenant_id,
+            )
+        try:
+            return int(res.split()[-1])
+        except (ValueError, IndexError):
+            return 0
+
     async def get_active_version(
         self,
         detection_id: str,

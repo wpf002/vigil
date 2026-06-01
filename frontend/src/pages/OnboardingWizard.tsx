@@ -245,7 +245,7 @@ function Step3() {
       <h2 className="font-mono text-fg text-lg mb-3">Detections</h2>
       <p className="font-mono text-[12px] text-fg-muted mb-5">
         These detections are compiled and deployed to your SIEM automatically.
-        You can add more from the Detection Marketplace at any time.
+        You can create, edit, and delete detections in the Detection Library at any time.
       </p>
       <div className="space-y-2">
         {PLATFORM_DETECTIONS.map((d) => (
@@ -295,10 +295,10 @@ function Step4({
         </button>
 
         <a
-          href="/marketplace"
+          href="/detections"
           className="block text-center px-3 py-2 border border-border bg-surface-2 text-fg-muted hover:text-fg rounded-sm font-mono text-sm"
         >
-          Browse Detection Marketplace
+          Go to Detection Library
         </a>
 
         <button

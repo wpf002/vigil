@@ -11,7 +11,6 @@ import { PlaybookBuilder } from "@/pages/PlaybookBuilder";
 import { SimulationsPage } from "@/pages/SimulationsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
-import { MarketplacePage } from "@/pages/MarketplacePage";
 import { ExecutiveDashboard } from "@/pages/ExecutiveDashboard";
 import { CompliancePage } from "@/pages/CompliancePage";
 import { APIKeysPage } from "@/pages/APIKeysPage";
@@ -45,7 +44,6 @@ export function App() {
                 <Route path="/attacks/:id" element={<AttackDetail />} />
                 <Route path="/detections" element={<DetectionLibrary />} />
                 <Route path="/detections/:id" element={<DetectionDetail />} />
-                <Route path="/marketplace" element={<MarketplacePage />} />
                 <Route path="/dashboard" element={<ExecutiveDashboard />} />
                 <Route path="/compliance" element={<CompliancePage />} />
                 <Route path="/settings/api-keys" element={<APIKeysPage />} />

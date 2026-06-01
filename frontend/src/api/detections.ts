@@ -136,3 +136,30 @@ export async function getCoverage(): Promise<CoverageReport> {
   const res = await detectionClient.get<ApiEnvelope<CoverageReport>>("/coverage");
   return unwrap(res.data);
 }
+
+export interface DetectionInput {
+  detection_id: string;
+  att_ck_tactic: string;
+  att_ck_technique?: string;
+  notes?: string;
+}
+
+export async function createDetection(body: DetectionInput): Promise<DetectionVersion> {
+  const res = await detectionClient.post<ApiEnvelope<DetectionVersion>>("/detections", body);
+  return unwrap(res.data);
+}
+
+export async function updateDetection(
+  id: string,
+  body: DetectionInput,
+): Promise<DetectionVersion> {
+  const res = await detectionClient.patch<ApiEnvelope<DetectionVersion>>(
+    `/detections/${id}`,
+    body,
+  );
+  return unwrap(res.data);
+}
+
+export async function deleteDetection(id: string): Promise<void> {
+  await detectionClient.delete(`/detections/${id}`);
+}

@@ -211,18 +211,107 @@ async def list_detections(
     store: DetectionStore = Depends(get_store),
 ):
     tenant = _tenant_uuid(principal)
-    platform = _platform_tenant(get_config())
-    rows = await store.list_active_detections(tenant, platform_tenant_id=platform)
+    # Tenant owns its detections (create/edit/delete). No platform fallback, so
+    # a deleted detection actually disappears.
+    rows = await store.list_active_detections(tenant)
     enriched = []
     for r in rows:
-        # Performance is recorded under the *consumer's* tenant — even when
-        # the detection version itself is platform-shared, the signals
-        # firing on it come from the customer's environment.
         perf = await store.latest_performance(r["detection_id"], tenant)
-        if perf is None and r["tenant_id"] != tenant:
-            perf = await store.latest_performance(r["detection_id"], r["tenant_id"])
         enriched.append({**_serialize_version(r), "performance": _serialize_performance(perf)})
     return ok(enriched, count=len(enriched))
+
+
+# ── detection CRUD (tenant-owned) ─────────────────────────────────────────────
+
+class DetectionInput(BaseModel):
+    detection_id: str
+    att_ck_tactic: str
+    att_ck_technique: str = ""
+    notes: Optional[str] = None
+    status_contributed: str = "Observed"
+    confidence: float = 0.3
+
+
+def _det_created_by(principal: TenantPrincipal) -> Optional[UUID]:
+    try:
+        return UUID(principal.user_id)
+    except (ValueError, TypeError):
+        return None
+
+
+def _bump_version(v: Optional[str]) -> str:
+    try:
+        parts = [int(x) for x in str(v or "1.0.0").split(".")]
+        parts[-1] += 1
+        return ".".join(str(p) for p in parts)
+    except (ValueError, AttributeError):
+        return "1.0.1"
+
+
+async def _upsert_detection(store, tenant: UUID, principal, d: DetectionInput, version: str):
+    yaml_content = (
+        f"detection_id: {d.detection_id}\n"
+        f"tactic: {d.att_ck_tactic}\n"
+        f"technique: {d.att_ck_technique}\n"
+        f"notes: {d.notes or ''}\n"
+    )
+    state_impact = {
+        "transitions_to": d.att_ck_tactic,
+        "status": d.status_contributed,
+        "confidence_contribution": d.confidence,
+        "progression": False,
+    }
+    await store.upsert_version(
+        detection_id=d.detection_id, version=version, yaml_content=yaml_content,
+        compiled_spl=None, compiled_kql=None, compiled_eql=None,
+        att_ck_tactic=d.att_ck_tactic, att_ck_technique=d.att_ck_technique,
+        state_impact=state_impact, tenant_id=tenant,
+        deployed_by=_det_created_by(principal), notes=d.notes,
+    )
+
+
+@app.post("/detections")
+async def create_detection(
+    body: DetectionInput,
+    principal: TenantPrincipal = Depends(require_admin),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    if await store.get_active_version(body.detection_id, tenant) is not None:
+        return err(f"A detection '{body.detection_id}' already exists", code=409)
+    await _upsert_detection(store, tenant, principal, body, "1.0.0")
+    active = await store.get_active_version(body.detection_id, tenant)
+    return ok(_serialize_version(active))
+
+
+@app.patch("/detections/{detection_id}")
+async def update_detection(
+    detection_id: str,
+    body: DetectionInput,
+    principal: TenantPrincipal = Depends(require_admin),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    existing = await store.get_active_version(detection_id, tenant)
+    if existing is None:
+        return err("Detection not found", code=404)
+    body.detection_id = detection_id
+    await _upsert_detection(store, tenant, principal, body, _bump_version(existing.get("version")))
+    active = await store.get_active_version(detection_id, tenant)
+    return ok(_serialize_version(active))
+
+
+@app.delete("/detections/{detection_id}")
+async def delete_detection_endpoint(
+    detection_id: str,
+    principal: TenantPrincipal = Depends(require_admin),
+    store: DetectionStore = Depends(get_store),
+):
+    tenant = _tenant_uuid(principal)
+    removed = await store.delete_detection(detection_id, tenant)
+    if removed == 0:
+        return err("Detection not found", code=404)
+    return ok({"detection_id": detection_id, "deleted": True})
 
 
 @app.get("/detections/{detection_id}")
@@ -356,8 +445,7 @@ async def coverage(
     store: DetectionStore = Depends(get_store),
 ):
     tenant = _tenant_uuid(principal)
-    platform = _platform_tenant(get_config())
-    active = await store.list_active_detections(tenant, platform_tenant_id=platform)
+    active = await store.list_active_detections(tenant)
     return ok(build_coverage_report(active))
 
 

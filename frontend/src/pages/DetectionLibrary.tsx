@@ -1,8 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Radar } from "lucide-react";
-import { listDetections } from "@/api/detections";
-import { timeAgo, pct, titleCase } from "@/lib/format";
+import { Radar, Plus, Pencil, Trash2, X } from "lucide-react";
+import {
+  createDetection,
+  deleteDetection,
+  listDetections,
+  updateDetection,
+  type DetectionInput,
+} from "@/api/detections";
+import { pct, titleCase, phaseLabel } from "@/lib/format";
+import { PHASE_ORDER } from "@/types/attacks";
 import type { DetectionVersion } from "@/types/detections";
 
 function fpRateClasses(rate: number | null | undefined): string {
@@ -18,8 +26,6 @@ function statusBadgeClasses(status: string): string {
       return "border-success/40 bg-success/10 text-success";
     case "deprecated":
       return "border-fg-faint/40 bg-surface-2 text-fg-muted";
-    case "rolled_back":
-      return "border-warning/40 bg-warning/10 text-warning";
     default:
       return "border-border bg-surface-2 text-fg-muted";
   }
@@ -27,13 +33,31 @@ function statusBadgeClasses(status: string): string {
 
 export function DetectionLibrary() {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState<DetectionVersion | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
   const query = useQuery({
     queryKey: ["detections"],
     queryFn: listDetections,
     refetchInterval: 30_000,
   });
-
   const detections = query.data ?? [];
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteDetection(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["detections"] }),
+    onError: (e: Error) => alert(`Delete failed: ${e.message}`),
+  });
+
+  function openNew() {
+    setEditing(null);
+    setShowForm(true);
+  }
+  function openEdit(d: DetectionVersion) {
+    setEditing(d);
+    setShowForm(true);
+  }
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto">
@@ -43,11 +67,18 @@ export function DetectionLibrary() {
         <span className="ml-auto text-[11px] font-mono text-fg-faint tabular-nums">
           {detections.length} {detections.length === 1 ? "Detection" : "Detections"}
         </span>
+        <button
+          type="button"
+          onClick={openNew}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-mono border border-accent/40 bg-accent/10 text-accent rounded-sm hover:bg-accent/20"
+        >
+          <Plus size={13} /> New Detection
+        </button>
       </div>
       <p className="text-[12px] font-mono text-fg-muted mb-4 -mt-3 max-w-3xl">
-        Your active <span className="text-fg">detection rules</span> — the logic
-        that fires on incoming telemetry to surface attacks. Get more from the
-        Marketplace; automate the response in Playbooks.
+        Your <span className="text-fg">detection rules</span> — the logic that fires
+        on incoming telemetry to surface attacks. Create, edit, and delete them here;
+        automate the response in Playbooks.
       </p>
 
       {query.isLoading ? (
@@ -60,7 +91,7 @@ export function DetectionLibrary() {
         </div>
       ) : detections.length === 0 ? (
         <div className="vigil-card p-8 text-center text-fg-muted font-mono text-sm">
-          No detections deployed.
+          No detections yet. Click <b>New Detection</b> to create one.
         </div>
       ) : (
         <div className="vigil-card overflow-hidden">
@@ -73,8 +104,8 @@ export function DetectionLibrary() {
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Fires (30d)</th>
                 <th className="px-3 py-2 text-right">FP Rate</th>
-                <th className="px-3 py-2">Last Fired</th>
                 <th className="px-3 py-2">Version</th>
+                <th className="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -82,14 +113,28 @@ export function DetectionLibrary() {
                 <DetectionRow
                   key={d.detection_id}
                   detection={d}
-                  onClick={() =>
-                    navigate(`/detections/${encodeURIComponent(d.detection_id)}`)
-                  }
+                  onClick={() => navigate(`/detections/${encodeURIComponent(d.detection_id)}`)}
+                  onEdit={() => openEdit(d)}
+                  onDelete={() => {
+                    if (confirm(`Delete detection "${d.detection_id}"?`))
+                      deleteMut.mutate(d.detection_id);
+                  }}
                 />
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {showForm && (
+        <DetectionFormModal
+          editing={editing}
+          onClose={() => setShowForm(false)}
+          onSaved={() => {
+            setShowForm(false);
+            qc.invalidateQueries({ queryKey: ["detections"] });
+          }}
+        />
       )}
     </div>
   );
@@ -98,38 +143,164 @@ export function DetectionLibrary() {
 function DetectionRow({
   detection,
   onClick,
+  onEdit,
+  onDelete,
 }: {
   detection: DetectionVersion;
   onClick: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
   const perf = detection.performance;
-  const lastFired = perf?.computed_at ?? detection.deployed_at;
-
   return (
     <tr
       onClick={onClick}
       className="border-b border-border last:border-0 hover:bg-surface-2 cursor-pointer transition-colors"
     >
       <td className="px-3 py-2 text-fg">{detection.detection_id}</td>
-      <td className="px-3 py-2 text-fg-muted">
-        {titleCase(detection.att_ck_tactic)}
-      </td>
+      <td className="px-3 py-2 text-fg-muted">{titleCase(detection.att_ck_tactic)}</td>
       <td className="px-3 py-2 text-fg-faint">{detection.att_ck_technique}</td>
       <td className="px-3 py-2">
         <span className={`vigil-badge ${statusBadgeClasses(detection.status)}`}>
           {titleCase(detection.status)}
         </span>
       </td>
-      <td className="px-3 py-2 text-right text-fg tabular-nums">
-        {perf?.total_fires ?? 0}
-      </td>
+      <td className="px-3 py-2 text-right text-fg tabular-nums">{perf?.total_fires ?? 0}</td>
       <td className={`px-3 py-2 text-right tabular-nums ${fpRateClasses(perf?.fp_rate)}`}>
         {perf?.fp_rate == null ? "—" : pct(perf.fp_rate)}
       </td>
-      <td className="px-3 py-2 text-fg-muted">
-        {lastFired ? timeAgo(lastFired) : "—"}
-      </td>
       <td className="px-3 py-2 text-fg-faint">{detection.version}</td>
+      <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+        <div className="inline-flex gap-3 justify-end">
+          <button
+            type="button"
+            onClick={onEdit}
+            className="text-fg-faint hover:text-fg inline-flex items-center gap-1 text-[11px]"
+          >
+            <Pencil size={12} /> Edit
+          </button>
+          <button
+            type="button"
+            onClick={onDelete}
+            className="text-fg-faint hover:text-accent inline-flex items-center gap-1 text-[11px]"
+          >
+            <Trash2 size={12} /> Delete
+          </button>
+        </div>
+      </td>
     </tr>
+  );
+}
+
+function DetectionFormModal({
+  editing,
+  onClose,
+  onSaved,
+}: {
+  editing: DetectionVersion | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [detectionId, setDetectionId] = useState(editing?.detection_id ?? "");
+  const [tactic, setTactic] = useState(editing?.att_ck_tactic ?? "credential-access");
+  const [technique, setTechnique] = useState(editing?.att_ck_technique ?? "");
+  const [notes, setNotes] = useState("");
+
+  const mut = useMutation({
+    mutationFn: (body: DetectionInput) =>
+      editing ? updateDetection(editing.detection_id, body) : createDetection(body),
+    onSuccess: onSaved,
+    onError: (e: Error) => alert(`Save failed: ${e.message}`),
+  });
+
+  const canSave = detectionId.trim().length > 0 && tactic.length > 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+      <div className="vigil-card p-5 w-full max-w-lg">
+        <div className="flex items-center mb-4">
+          <h2 className="font-mono text-fg text-lg flex-1">
+            {editing ? "Edit Detection" : "New Detection"}
+          </h2>
+          <button type="button" onClick={onClose} className="text-fg-faint hover:text-fg">
+            <X size={16} />
+          </button>
+        </div>
+
+        <label className="block mb-3">
+          <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-mono mb-1">
+            Detection ID
+          </span>
+          <input
+            className="vigil-input w-full text-sm"
+            value={detectionId}
+            disabled={!!editing}
+            onChange={(e) => setDetectionId(e.target.value)}
+            placeholder="e.g. CUSTOM-RDP-BRUTE-FORCE"
+          />
+        </label>
+        <label className="block mb-3">
+          <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-mono mb-1">
+            Tactic
+          </span>
+          <select
+            className="vigil-input w-full text-sm"
+            value={tactic}
+            onChange={(e) => setTactic(e.target.value)}
+          >
+            {PHASE_ORDER.map((p) => (
+              <option key={p} value={p}>{phaseLabel(p)}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block mb-3">
+          <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-mono mb-1">
+            Technique
+          </span>
+          <input
+            className="vigil-input w-full text-sm"
+            value={technique}
+            onChange={(e) => setTechnique(e.target.value)}
+            placeholder="e.g. T1110"
+          />
+        </label>
+        <label className="block mb-4">
+          <span className="block text-[10px] uppercase tracking-wider text-fg-faint font-mono mb-1">
+            Notes
+          </span>
+          <textarea
+            className="vigil-input w-full text-sm h-20"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="What this detection looks for…"
+          />
+        </label>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-3 py-1.5 text-[12px] font-mono border border-border bg-surface-2 text-fg-muted rounded-sm hover:text-fg"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!canSave || mut.isPending}
+            onClick={() =>
+              mut.mutate({
+                detection_id: detectionId.trim(),
+                att_ck_tactic: tactic,
+                att_ck_technique: technique.trim(),
+                notes: notes.trim() || undefined,
+              })
+            }
+            className="px-3 py-1.5 text-[12px] font-mono border border-accent/50 bg-accent/15 text-accent-hover rounded-sm hover:bg-accent/25 disabled:opacity-40"
+          >
+            {mut.isPending ? "Saving…" : editing ? "Save Changes" : "Create Detection"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
