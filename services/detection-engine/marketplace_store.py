@@ -50,7 +50,7 @@ class MarketplaceStore:
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM marketplace_listings WHERE detection_id=$1 "
-                "ORDER BY is_curated DESC, published_at DESC LIMIT 1",
+                "AND status='active' ORDER BY is_curated DESC, published_at DESC LIMIT 1",
                 detection_id,
             )
         return dict(row) if row else None
