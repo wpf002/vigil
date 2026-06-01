@@ -18,6 +18,7 @@ from anthropic import Anthropic
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 
+from . import agent_tools
 from .budget import CallBudget
 from .cache import NarrativeCache
 from .config import AIEngineConfig, get_config
@@ -147,6 +148,10 @@ def create_app() -> FastAPI:
                 "daily_limit": _engine.budget.limit if _engine.budget else 0,
                 "used_today": budget_used,
             },
+            "agent_retrieval": {
+                "enabled": agent_tools.retrieval_enabled(),
+                "max_steps": agent_tools.MAX_INVESTIGATION_STEPS,
+            },
         }
 
     @app.post("/generate")
@@ -210,6 +215,30 @@ def create_app() -> FastAPI:
 
         await _engine.cache.set(attack_id, confidence, patch_body)
         return patch_body
+
+    @app.post("/investigate")
+    async def investigate(body: dict, x_internal_key: Optional[str] = Header(default=None)):
+        """Agent-less autonomous retrieval (Big Bet 3). Runs a bounded LLM
+        tool-use loop to gather telemetry for a hypothesis. Gated behind
+        AGENT_RETRIEVAL_ENABLED + the global kill switch, and every Claude call
+        goes through the shared daily budget. Returns {enabled:false} with no
+        spend when disabled.
+        """
+        _check_admin(x_internal_key)
+        if _engine is None or _engine.narrator is None or _engine.budget is None:
+            raise HTTPException(status_code=503, detail="Engine not ready")
+        hypothesis = str(body.get("hypothesis") or "").strip()
+        if not hypothesis:
+            raise HTTPException(status_code=400, detail="hypothesis required")
+        result = await agent_tools.run_investigation(
+            hypothesis=hypothesis,
+            tenant_id=str(body.get("tenant_id") or "-"),
+            client=_engine.narrator._client,  # noqa: SLF001 — shared max_retries=0 client
+            model=_engine.config.anthropic_model,
+            budget=_engine.budget,
+            narrator_enabled=_engine.narrator._enabled,  # noqa: SLF001
+        )
+        return result
 
     @app.post("/admin/anthropic/disable")
     async def admin_disable(x_internal_key: Optional[str] = Header(default=None)):
