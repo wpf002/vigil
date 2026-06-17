@@ -9,6 +9,7 @@ import { PlaybookList } from "@/pages/PlaybookList";
 import { PlaybookDetail } from "@/pages/PlaybookDetail";
 import { PlaybookBuilder } from "@/pages/PlaybookBuilder";
 import { SimulationsPage } from "@/pages/SimulationsPage";
+import { EnrichmentPage } from "@/pages/EnrichmentPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ExecutiveDashboard } from "@/pages/ExecutiveDashboard";
@@ -52,6 +53,7 @@ export function App() {
                 <Route path="/pipeline" element={<PipelinePage />} />
                 <Route path="/settings" element={<Navigate to="/settings/api-keys" replace />} />
                 <Route path="/simulations" element={<SimulationsPage />} />
+                <Route path="/enrichment" element={<EnrichmentPage />} />
                 <Route path="/playbooks" element={<PlaybookList />} />
                 <Route path="/playbooks/build" element={<PlaybookBuilder />} />
                 <Route path="/playbooks/:id" element={<PlaybookDetail />} />

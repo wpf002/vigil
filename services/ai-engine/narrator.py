@@ -17,12 +17,69 @@ Spend defenses (layered, fail-closed):
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+
+# ── OSINT enrichment hook (vigil-osint) ─────────────────────────────────────
+# Off by default: when OSINT_ENRICHMENT_ENABLED=true, the narrator enriches the
+# IOCs in an AttackState (hosts/domains/IPs) via vigil-osint before reasoning.
+# The call site is wired here; feeding observations INTO the prompt is a later
+# pass (per spec), so today this only fetches + logs and never adds latency or
+# cost when the flag is off.
+def _osint_enabled() -> bool:
+    return (os.getenv("OSINT_ENRICHMENT_ENABLED") or "false").lower() in ("1", "true", "yes")
+
+
+def _load_osint_client() -> Any:
+    """Best-effort import of the shared OSINT client. Returns None if
+    vigil-osint isn't importable in this deployment (enrichment stays optional)."""
+    try:
+        from vigil_osint.client import osint_client  # type: ignore
+        return osint_client
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ioc_candidates(state: dict[str, Any]) -> list[str]:
+    """Pull enrichable indicators out of an AttackState. Hosts + any domain/ip
+    looking strings on evidence. De-duplicated, capped to keep cost bounded."""
+    seen: list[str] = []
+    for host in (state.get("hosts") or []):
+        if isinstance(host, str) and host and host not in seen:
+            seen.append(host)
+    for ev in (state.get("evidence") or []):
+        for key in ("domain", "dest_ip", "src_ip", "url", "hash"):
+            val = ev.get(key) if isinstance(ev, dict) else None
+            if isinstance(val, str) and val and val not in seen:
+                seen.append(val)
+    return seen[:5]
+
+
+def gather_osint_observations(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Enrich an AttackState's IOCs via vigil-osint. Best-effort: returns [] on
+    any failure so narrative generation never breaks. Prompt integration of the
+    returned observations is intentionally deferred."""
+    if not _osint_enabled():
+        return []
+    client = _load_osint_client()
+    if client is None:
+        return []
+    tenant_id = str(state.get("tenant_id") or "system")
+    observations: list[dict[str, Any]] = []
+    for ioc in _ioc_candidates(state):
+        observations.extend(client.enrich(ioc, tenant_id=tenant_id))
+    logger.info(
+        "ai_engine.narrator.osint_enrichment",
+        attack_id=state.get("attack_id"),
+        observations=len(observations),
+    )
+    return observations
 
 
 SYSTEM_PROMPT = (
@@ -251,6 +308,11 @@ class Narrator:
             raise CircuitOpen(
                 f"breaker tripped after {self._consecutive_errors} consecutive errors"
             )
+
+        # OSINT enrichment hook (no-op unless OSINT_ENRICHMENT_ENABLED=true).
+        # Wired here so observations are available; folding them into the prompt
+        # is a deliberate later pass, so _build_user_message is unchanged today.
+        _osint_observations = gather_osint_observations(state)  # noqa: F841
 
         try:
             message = self._client.messages.create(

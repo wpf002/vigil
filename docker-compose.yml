@@ -234,6 +234,20 @@ services:
     ports:
       - "8009:8009"
 
+  # OSINT enrichment connector service. Stateless MVP (urlscan passive search) —
+  # no Postgres/Redis dependency; observations are returned in the response.
+  vigil-osint:
+    build:
+      context: ./services/vigil-osint
+      dockerfile: Dockerfile
+    environment:
+      # Reuse VIGIL's shared JWT secret so user tokens are valid here too.
+      - AUTH_SECRET=${AUTH_SECRET:-dev-only-secret-change-me}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - PORT=8012
+    ports:
+      - "8012:8012"
+
 volumes:
   postgres_data:
   redis_data:

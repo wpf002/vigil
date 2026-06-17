@@ -10,6 +10,7 @@ import {
   BarChart3,
   FileCheck,
   FlaskConical,
+  ShieldQuestion,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuthStore } from "@/store/authStore";
@@ -27,6 +28,7 @@ const NAV: NavItem[] = [
   { to: "/attacks", label: "Active Threats", icon: ShieldAlert, active: true },
   { to: "/history", label: "Resolved", icon: ScrollText, active: true },
   { to: "/detections", label: "Detections", icon: Radar, active: true },
+  { to: "/enrichment", label: "IOC Enrichment", icon: ShieldQuestion, active: true },
   { to: "/playbooks", label: "Playbooks", icon: ListChecks, active: true },
   { to: "/simulations", label: "Simulation", icon: FlaskConical, active: true },
   { to: "/compliance", label: "Compliance", icon: FileCheck, active: true },
