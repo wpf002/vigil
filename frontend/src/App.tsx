@@ -10,6 +10,7 @@ import { PlaybookDetail } from "@/pages/PlaybookDetail";
 import { PlaybookBuilder } from "@/pages/PlaybookBuilder";
 import { SimulationsPage } from "@/pages/SimulationsPage";
 import { EnrichmentPage } from "@/pages/EnrichmentPage";
+import { EnrichmentSettingsPage } from "@/pages/EnrichmentSettingsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { RegisterPage } from "@/pages/RegisterPage";
 import { ExecutiveDashboard } from "@/pages/ExecutiveDashboard";
@@ -49,6 +50,7 @@ export function App() {
                 <Route path="/compliance" element={<CompliancePage />} />
                 <Route path="/settings/api-keys" element={<APIKeysPage />} />
                 <Route path="/settings/webhooks" element={<WebhooksPage />} />
+                <Route path="/settings/enrichment" element={<EnrichmentSettingsPage />} />
                 <Route path="/onboarding" element={<OnboardingWizard />} />
                 <Route path="/pipeline" element={<PipelinePage />} />
                 <Route path="/settings" element={<Navigate to="/settings/api-keys" replace />} />

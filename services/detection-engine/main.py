@@ -223,6 +223,15 @@ async def list_detections(
 
 # ── detection CRUD (tenant-owned) ─────────────────────────────────────────────
 
+class Condition(BaseModel):
+    """One predicate of a detection's matching logic. `field` is a dotted CDM
+    path (e.g. process.command_line); `op` is one of the CDM evaluator's
+    operators; `value` is the comparison target."""
+    field: str
+    op: str = "equals"
+    value: Any = None
+
+
 class DetectionInput(BaseModel):
     detection_id: str
     att_ck_tactic: str
@@ -230,6 +239,8 @@ class DetectionInput(BaseModel):
     notes: Optional[str] = None
     status_contributed: str = "Observed"
     confidence: float = 0.3
+    # Rule logic — AND-combined predicates the in-transit evaluator matches on.
+    conditions: list[Condition] = []
 
 
 def _det_created_by(principal: TenantPrincipal) -> Optional[UUID]:
@@ -249,17 +260,28 @@ def _bump_version(v: Optional[str]) -> str:
 
 
 async def _upsert_detection(store, tenant: UUID, principal, d: DetectionInput, version: str):
+    conditions = [c.model_dump() for c in d.conditions]
+    cond_yaml = ""
+    if conditions:
+        cond_yaml = "conditions:\n" + "".join(
+            f"  - field: {c['field']}\n    op: {c['op']}\n    value: {c['value']}\n"
+            for c in conditions
+        )
     yaml_content = (
         f"detection_id: {d.detection_id}\n"
         f"tactic: {d.att_ck_tactic}\n"
         f"technique: {d.att_ck_technique}\n"
         f"notes: {d.notes or ''}\n"
+        f"{cond_yaml}"
     )
     state_impact = {
         "transitions_to": d.att_ck_tactic,
         "status": d.status_contributed,
         "confidence_contribution": d.confidence,
         "progression": False,
+        # Persist the rule logic so the in-transit evaluator can load it and so
+        # the UI can re-render/edit it. No migration — rides in the JSONB column.
+        "conditions": conditions,
     }
     await store.upsert_version(
         detection_id=d.detection_id, version=version, yaml_content=yaml_content,

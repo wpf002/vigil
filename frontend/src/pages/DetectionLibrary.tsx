@@ -7,7 +7,9 @@ import {
   deleteDetection,
   listDetections,
   updateDetection,
+  RULE_OPERATORS,
   type DetectionInput,
+  type RuleCondition,
 } from "@/api/detections";
 import { pct, titleCase, phaseLabel } from "@/lib/format";
 import { PHASE_ORDER } from "@/types/attacks";
@@ -205,6 +207,20 @@ function DetectionFormModal({
   const [tactic, setTactic] = useState(editing?.att_ck_tactic ?? "credential-access");
   const [technique, setTechnique] = useState(editing?.att_ck_technique ?? "");
   const [notes, setNotes] = useState("");
+  const [conditions, setConditions] = useState<RuleCondition[]>(
+    (editing?.state_impact?.conditions ?? []).map((c) => ({
+      field: c.field,
+      op: c.op,
+      value: (c.value ?? "") as RuleCondition["value"],
+    })),
+  );
+
+  const addCondition = () =>
+    setConditions((cs) => [...cs, { field: "", op: "equals", value: "" }]);
+  const removeCondition = (i: number) =>
+    setConditions((cs) => cs.filter((_, idx) => idx !== i));
+  const updateCondition = (i: number, patch: Partial<RuleCondition>) =>
+    setConditions((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
 
   const mut = useMutation({
     mutationFn: (body: DetectionInput) =>
@@ -276,6 +292,78 @@ function DetectionFormModal({
           />
         </label>
 
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[10px] uppercase tracking-wider text-fg-faint font-mono">
+              Rule Logic{" "}
+              <span className="text-fg-faint normal-case tracking-normal">
+                (all conditions must match)
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={addCondition}
+              className="text-[11px] font-mono text-accent-hover hover:underline inline-flex items-center gap-1"
+            >
+              <Plus size={11} /> Add condition
+            </button>
+          </div>
+
+          {conditions.length === 0 ? (
+            <div className="text-[11px] font-mono text-fg-faint border border-dashed border-border rounded-sm px-3 py-3 text-center">
+              No conditions — this detection is metadata-only and won't match
+              in-transit events. Add a condition to give it logic.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              {conditions.map((c, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <input
+                    className="vigil-input text-[12px] flex-1 min-w-0"
+                    value={c.field}
+                    onChange={(e) => updateCondition(i, { field: e.target.value })}
+                    placeholder="process.command_line"
+                    aria-label="Field"
+                  />
+                  <select
+                    className="vigil-input text-[12px] w-24 shrink-0"
+                    value={c.op}
+                    onChange={(e) => updateCondition(i, { op: e.target.value })}
+                    aria-label="Operator"
+                  >
+                    {RULE_OPERATORS.map((op) => (
+                      <option key={op} value={op}>
+                        {op}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="vigil-input text-[12px] flex-1 min-w-0 disabled:opacity-40"
+                    value={c.op === "exists" ? "" : String(c.value ?? "")}
+                    disabled={c.op === "exists"}
+                    onChange={(e) => updateCondition(i, { value: e.target.value })}
+                    placeholder={c.op === "exists" ? "—" : "value"}
+                    aria-label="Value"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeCondition(i)}
+                    className="shrink-0 text-fg-faint hover:text-accent"
+                    aria-label="Remove condition"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+              <p className="text-[10px] font-mono text-fg-faint mt-1">
+                Field = dotted CDM path (e.g. process.process_name,
+                network.dest_ip). Authored logic runs live against in-transit
+                events.
+              </p>
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end gap-2">
           <button
             type="button"
@@ -293,6 +381,13 @@ function DetectionFormModal({
                 att_ck_tactic: tactic,
                 att_ck_technique: technique.trim(),
                 notes: notes.trim() || undefined,
+                conditions: conditions
+                  .filter((c) => c.field.trim().length > 0)
+                  .map((c) => ({
+                    field: c.field.trim(),
+                    op: c.op,
+                    value: c.op === "exists" ? null : c.value,
+                  })),
               })
             }
             className="px-3 py-1.5 text-[12px] font-mono border border-accent/50 bg-accent/15 text-accent-hover rounded-sm hover:bg-accent/25 disabled:opacity-40"

@@ -41,6 +41,36 @@ class CDMRule:
     status: str = "Observed"             # phase status contributed on match
 
 
+def rule_from_conditions(
+    detection_id: str,
+    name: str,
+    conditions: list[dict[str, Any]],
+    tactic: Optional[str] = None,
+    technique_id: Optional[str] = None,
+    confidence: float = 0.6,
+    status: str = "Observed",
+) -> Optional[CDMRule]:
+    """Build a CDMRule from stored condition dicts ({field, op, value}). Returns
+    None when there are no usable conditions (a metadata-only detection)."""
+    conds: list[Condition] = []
+    for c in conditions or []:
+        fld = c.get("field")
+        if not fld:
+            continue
+        conds.append(Condition(field=fld, op=c.get("op") or "equals", value=c.get("value")))
+    if not conds:
+        return None
+    return CDMRule(
+        detection_id=detection_id,
+        name=name,
+        conditions=conds,
+        tactic=tactic,
+        technique_id=technique_id,
+        confidence=confidence,
+        status=status,
+    )
+
+
 def resolve_field(event_dict: dict[str, Any], path: str) -> Any:
     """Walk a dotted path through a model_dump(mode='json') CDM event."""
     cur: Any = event_dict

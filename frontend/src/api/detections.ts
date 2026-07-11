@@ -137,11 +137,33 @@ export async function getCoverage(): Promise<CoverageReport> {
   return unwrap(res.data);
 }
 
+export interface RuleCondition {
+  field: string;
+  op: string;
+  value: string | number | boolean | null;
+}
+
+// Operators supported by the in-transit CDM evaluator (services/ingestor/cdm_rules.py).
+export const RULE_OPERATORS = [
+  "equals",
+  "not_equals",
+  "contains",
+  "regex",
+  "gt",
+  "gte",
+  "lt",
+  "lte",
+  "in",
+  "exists",
+] as const;
+
 export interface DetectionInput {
   detection_id: string;
   att_ck_tactic: string;
   att_ck_technique?: string;
   notes?: string;
+  confidence?: number;
+  conditions?: RuleCondition[];
 }
 
 export async function createDetection(body: DetectionInput): Promise<DetectionVersion> {

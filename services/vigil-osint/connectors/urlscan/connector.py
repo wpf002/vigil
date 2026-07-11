@@ -30,6 +30,7 @@ _FIELD = {
 
 class UrlscanConnector(BaseConnector):
     name = "urlscan"
+    homepage = "https://urlscan.io"
     category = "web"
     auth_type = "none"
     capabilities = ["domain", "ip", "url", "hash", "keyword"]

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { listAttacks } from "@/api/attacks";
+import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { listAttacks, listAttacksPaged } from "@/api/attacks";
 import { AttackCard } from "@/components/AttackCard";
 import { StatsBanner } from "@/components/StatsBanner";
 import { PHASE_ORDER } from "@/types/attacks";
@@ -15,40 +15,64 @@ const EMPTY_FILTERS: AttackListFilters = {
   offset: 0,
 };
 
+const PAGE_SIZE = 50;
+
 export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
   // Filters are local to this view instance so the Active and Resolved lists
   // never share filter state (previously a global store leaked Active filters
   // into the Resolved query, hiding resolved attacks).
   const [filters, setFilters] = useState<AttackListFilters>(EMPTY_FILTERS);
-  const setPhaseFilter = (phase: MITRETactic | null) =>
+  // Resolved view paginates server-side (the history set can be hundreds deep).
+  const [page, setPage] = useState(0);
+  const resetPage = () => setPage(0);
+  const setPhaseFilter = (phase: MITRETactic | null) => {
     setFilters((f) => ({ ...f, phase }));
-  const setMomentumFilter = (momentum: Momentum | null) =>
+    resetPage();
+  };
+  const setMomentumFilter = (momentum: Momentum | null) => {
     setFilters((f) => ({ ...f, momentum }));
-  const setMinConfidence = (value: number) =>
+    resetPage();
+  };
+  const setMinConfidence = (value: number) => {
     setFilters((f) => ({ ...f, min_confidence: value }));
-  const resetFilters = () => setFilters(EMPTY_FILTERS);
+    resetPage();
+  };
+  const resetFilters = () => {
+    setFilters(EMPTY_FILTERS);
+    resetPage();
+  };
 
   const filtersActive =
     filters.phase != null ||
     filters.momentum != null ||
     (filters.min_confidence ?? 0) > 0;
 
-  // On the Resolved (history) view, fetch resolved/contained attacks instead
-  // of the default active-only set.
-  const effectiveFilters = resolved
-    ? { ...filters, status: "all", limit: 200 }
-    : filters;
+  // Resolved view: fetch the "inactive" set (resolved/contained/false-positive)
+  // one page at a time, server-side. Active view: default active-only set.
+  const pagedFilters = {
+    ...filters,
+    status: "inactive",
+    limit: PAGE_SIZE,
+    offset: page * PAGE_SIZE,
+  };
 
   const query = useQuery({
-    queryKey: ["attacks", resolved ? "history" : "active", effectiveFilters],
-    queryFn: () => listAttacks(effectiveFilters),
+    queryKey: [
+      "attacks",
+      resolved ? "history" : "active",
+      resolved ? pagedFilters : filters,
+    ],
+    queryFn: () =>
+      resolved
+        ? listAttacksPaged(pagedFilters)
+        : listAttacks(filters).then((items) => ({ items, total: items.length })),
     refetchInterval: 30_000,
+    placeholderData: resolved ? keepPreviousData : undefined,
   });
 
-  const allResults = query.data ?? [];
-  const attacks = resolved
-    ? allResults.filter((a) => a.status !== "active")
-    : allResults;
+  const attacks = query.data?.items ?? [];
+  const total = query.data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="px-6 py-6 max-w-[1400px] mx-auto">
@@ -56,6 +80,16 @@ export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
         <h1 className="text-xl font-mono text-fg">
           {resolved ? "Resolved" : "Active Threats"}
         </h1>
+        {resolved && (
+          <p className="text-[12px] font-mono text-fg-muted mt-1 max-w-3xl">
+            Attacks that are no longer active. Each row's badge shows how it
+            closed — <span className="text-success">Resolved</span> (analyst
+            closed it), <span className="text-info">Contained</span> (stopped
+            mid-attack), or{" "}
+            <span className="text-fg">False Positive</span>. Click any row to open
+            the full attack and its historical evidence chain.
+          </p>
+        )}
       </div>
 
       {!resolved && <StatsBanner />}
@@ -121,7 +155,8 @@ export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
         )}
 
         <span className="text-[11px] font-mono text-fg-faint tabular-nums">
-          {attacks.length} {attacks.length === 1 ? "Threat" : "Threats"}
+          {resolved ? total : attacks.length}{" "}
+          {(resolved ? total : attacks.length) === 1 ? "Threat" : "Threats"}
         </span>
       </div>
 
@@ -141,6 +176,36 @@ export function AttackList({ resolved = false }: { resolved?: boolean } = {}) {
             </li>
           ))}
         </ol>
+      )}
+
+      {resolved && total > PAGE_SIZE && (
+        <div className="mt-4 flex items-center justify-between px-3 py-2 border border-border rounded bg-surface font-mono text-[11px] text-fg-muted">
+          <span className="tabular-nums">
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of{" "}
+            {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}
+              className="px-2 py-1 rounded-sm border border-border text-fg-muted hover:text-fg hover:border-accent/40 disabled:opacity-30 disabled:hover:text-fg-muted disabled:hover:border-border"
+            >
+              Prev
+            </button>
+            <span className="tabular-nums text-fg-faint">
+              Page {page + 1} / {pageCount}
+            </span>
+            <button
+              type="button"
+              disabled={page + 1 >= pageCount}
+              onClick={() => setPage((p) => p + 1)}
+              className="px-2 py-1 rounded-sm border border-border text-fg-muted hover:text-fg hover:border-accent/40 disabled:opacity-30 disabled:hover:text-fg-muted disabled:hover:border-border"
+            >
+              Next
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

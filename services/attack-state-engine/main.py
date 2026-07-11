@@ -230,16 +230,21 @@ async def list_attacks(
     momentum: Optional[Momentum] = Query(None),
     status: Optional[str] = Query(
         None,
-        description="Filter by status. Pass 'all' to include resolved/false-positive (default: active only).",
+        description="Filter by status. 'all' = every status; 'inactive' = resolved/contained/false-positive (the Resolved view); a specific status; default: active only.",
     ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     status_arg: Optional[AttackStateStatus]
+    exclude_active = False
     if status is None:
         status_arg = AttackStateStatus.ACTIVE
     elif status.lower() == "all":
         status_arg = None
+    elif status.lower() == "inactive":
+        # Resolved view — everything no longer active, server-side.
+        status_arg = None
+        exclude_active = True
     else:
         try:
             status_arg = AttackStateStatus(status.lower())
@@ -254,13 +259,26 @@ async def list_attacks(
         status=status_arg,
         limit=limit,
         offset=offset,
+        exclude_active=exclude_active,
     )
-    return ok(
-        [s.model_dump(mode="json") for s in states],
-        count=len(states),
-        limit=limit,
-        offset=offset,
+    total = await store.search_count(
+        tenant_id=principal.tenant_id,
+        phase=phase,
+        min_confidence=min_confidence,
+        momentum=momentum,
+        status=status_arg,
+        exclude_active=exclude_active,
     )
+    # The list view never renders the full evidence chain — it only shows a
+    # signal COUNT — so strip the (potentially thousands-of-items) evidence
+    # array from each row. This is what caused the Resolved page to time out.
+    rows = []
+    for s in states:
+        d = s.model_dump(mode="json")
+        d["evidence_count"] = len(d.get("evidence") or [])
+        d["evidence"] = []
+        rows.append(d)
+    return ok(rows, count=len(rows), total=total, limit=limit, offset=offset)
 
 
 @app.get("/attacks/stats/summary")

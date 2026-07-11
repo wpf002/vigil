@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ListChecks, Pause, Square, Wrench } from "lucide-react";
@@ -16,9 +17,21 @@ const STATUS_CLASSES: Record<PlaybookStatus, string> = {
   paused: "border-warning/40 bg-warning/10 text-warning",
 };
 
+const STATUS_OPTIONS: PlaybookStatus[] = [
+  "running",
+  "completed",
+  "failed",
+  "paused",
+];
+const PAGE_SIZE = 25;
+
 export function PlaybookList() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+
+  const [statusFilter, setStatusFilter] = useState<PlaybookStatus | "">("");
+  const [phaseFilter, setPhaseFilter] = useState<string>("");
+  const [page, setPage] = useState(0);
 
   const query = useQuery({
     queryKey: ["playbooks"],
@@ -26,7 +39,29 @@ export function PlaybookList() {
     refetchInterval: 30_000,
   });
 
-  const runs = query.data ?? [];
+  const allRuns = query.data ?? [];
+
+  // Phase options derived from the data so the dropdown only shows real phases.
+  const phaseOptions = useMemo(
+    () =>
+      Array.from(new Set(allRuns.map((r) => r.phase_at_trigger))).sort(),
+    [allRuns],
+  );
+
+  const filtered = useMemo(
+    () =>
+      allRuns.filter(
+        (r) =>
+          (statusFilter === "" || r.status === statusFilter) &&
+          (phaseFilter === "" || r.phase_at_trigger === phaseFilter),
+      ),
+    [allRuns, statusFilter, phaseFilter],
+  );
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const runs = filtered.slice(safePage * PAGE_SIZE, (safePage + 1) * PAGE_SIZE);
+  const filtersActive = statusFilter !== "" || phaseFilter !== "";
 
   async function handleResume(runId: string) {
     try {
@@ -55,7 +90,7 @@ export function PlaybookList() {
         <ListChecks size={18} className="text-fg-muted" />
         <h1 className="text-xl font-mono text-fg">Response Playbooks</h1>
         <span className="ml-auto text-[11px] font-mono text-fg-faint tabular-nums">
-          {runs.length} {runs.length === 1 ? "Run" : "Runs"}
+          {filtered.length} {filtered.length === 1 ? "Run" : "Runs"}
         </span>
         <button
           type="button"
@@ -71,6 +106,58 @@ export function PlaybookList() {
         (Detections, the thing that fires, live under Detections/Marketplace.)
       </p>
 
+      <div className="mb-3 flex flex-wrap items-center gap-3 px-3 py-2 border border-border rounded bg-surface">
+        <select
+          aria-label="Filter by status"
+          className="vigil-input py-1 text-xs"
+          value={statusFilter}
+          onChange={(e) => {
+            setStatusFilter(e.target.value as PlaybookStatus | "");
+            setPage(0);
+          }}
+        >
+          <option value="">All Statuses</option>
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {titleCase(s)}
+            </option>
+          ))}
+        </select>
+
+        <select
+          aria-label="Filter by trigger phase"
+          className="vigil-input py-1 text-xs"
+          value={phaseFilter}
+          onChange={(e) => {
+            setPhaseFilter(e.target.value);
+            setPage(0);
+          }}
+        >
+          <option value="">All Phases</option>
+          {phaseOptions.map((p) => (
+            <option key={p} value={p}>
+              {titleCase(p)}
+            </option>
+          ))}
+        </select>
+
+        <div className="flex-1" />
+
+        {filtersActive && (
+          <button
+            type="button"
+            onClick={() => {
+              setStatusFilter("");
+              setPhaseFilter("");
+              setPage(0);
+            }}
+            className="text-[11px] font-mono text-fg-muted hover:text-accent"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       {query.isLoading ? (
         <div className="vigil-card p-8 text-center text-fg-muted font-mono text-sm">
           Loading playbook runs...
@@ -79,36 +166,71 @@ export function PlaybookList() {
         <div className="vigil-card p-8 text-center text-accent font-mono text-sm">
           Failed to load runs.
         </div>
-      ) : runs.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className="vigil-card p-8 text-center text-fg-muted font-mono text-sm">
-          No playbook runs yet. They start automatically when an attack escalates.
+          {filtersActive
+            ? "No playbook runs match these filters."
+            : "No playbook runs yet. They start automatically when an attack escalates."}
         </div>
       ) : (
-        <div className="vigil-card overflow-hidden">
-          <table className="w-full text-sm font-mono">
-            <thead className="bg-surface-2 border-b border-border">
-              <tr className="text-left text-[11px] uppercase tracking-wider text-fg-faint">
-                <th className="px-3 py-2">Phase at Trigger</th>
-                <th className="px-3 py-2 text-right">Confidence</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2 text-right">Actions</th>
-                <th className="px-3 py-2">Triggered</th>
-                <th className="px-3 py-2 text-right">Controls</th>
-              </tr>
-            </thead>
-            <tbody>
-              {runs.map((r) => (
-                <PlaybookRow
-                  key={r.run_id}
-                  run={r}
-                  onClick={() => navigate(`/playbooks/${r.run_id}`)}
-                  onResume={() => handleResume(r.run_id)}
-                  onAbort={() => handleAbort(r.run_id)}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <>
+          <div className="vigil-card overflow-hidden">
+            <table className="w-full text-sm font-mono">
+              <thead className="bg-surface-2 border-b border-border">
+                <tr className="text-left text-[11px] uppercase tracking-wider text-fg-faint">
+                  <th className="px-3 py-2">Phase at Trigger</th>
+                  <th className="px-3 py-2 text-right">Confidence</th>
+                  <th className="px-3 py-2">Status</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                  <th className="px-3 py-2">Triggered</th>
+                  <th className="px-3 py-2 text-right">Controls</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <PlaybookRow
+                    key={r.run_id}
+                    run={r}
+                    onClick={() => navigate(`/playbooks/${r.run_id}`)}
+                    onResume={() => handleResume(r.run_id)}
+                    onAbort={() => handleAbort(r.run_id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {filtered.length > PAGE_SIZE && (
+            <div className="mt-4 flex items-center justify-between px-3 py-2 border border-border rounded bg-surface font-mono text-[11px] text-fg-muted">
+              <span className="tabular-nums">
+                {safePage * PAGE_SIZE + 1}–
+                {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
+                {filtered.length}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={safePage === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="px-2 py-1 rounded-sm border border-border text-fg-muted hover:text-fg hover:border-accent/40 disabled:opacity-30"
+                >
+                  Prev
+                </button>
+                <span className="tabular-nums text-fg-faint">
+                  Page {safePage + 1} / {pageCount}
+                </span>
+                <button
+                  type="button"
+                  disabled={safePage + 1 >= pageCount}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="px-2 py-1 rounded-sm border border-border text-fg-muted hover:text-fg hover:border-accent/40 disabled:opacity-30"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

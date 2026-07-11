@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Webhook, Trash2, X, Send } from "lucide-react";
+import { SettingsTabs } from "@/components/SettingsTabs";
 import {
   createWebhook,
   deleteWebhook,
@@ -50,6 +51,8 @@ export function WebhooksPage() {
           Register webhook
         </button>
       </div>
+
+      <SettingsTabs />
 
       {list.isLoading ? (
         <div className="vigil-card p-6 text-center text-fg-muted font-mono text-sm">

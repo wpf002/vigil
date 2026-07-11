@@ -28,6 +28,11 @@ class OsintConfig(BaseSettings):
     http_timeout_seconds: float = 20.0
     max_observations_per_connector: int = 10
 
+    # VirusTotal v3. API key comes from the VIRUSTOTAL_API_KEY env var ONLY
+    # (never here) — the connector reads it at call time and falls back to a
+    # deep link when it's unset.
+    virustotal_base_url: str = "https://www.virustotal.com"
+
 
 _config: Optional[OsintConfig] = None
 

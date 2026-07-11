@@ -7,7 +7,7 @@ import {
   pct,
   timeAgo,
 } from "@/lib/format";
-import type { AttackState } from "@/types/attacks";
+import type { AttackState, AttackStateStatus } from "@/types/attacks";
 import { MomentumIndicator } from "./MomentumIndicator";
 
 interface Props {
@@ -15,6 +15,21 @@ interface Props {
 }
 
 const MAX_ENTITIES = 3;
+
+// Resolved-view statuses get a distinct badge so "contained" (stopped mid-attack)
+// reads differently from "resolved" (analyst closed it) and "false positive".
+const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
+  resolved: { label: "Resolved", cls: "border-success/40 bg-success/10 text-success" },
+  contained: { label: "Contained", cls: "border-info/40 bg-info/10 text-info" },
+  false_positive: {
+    label: "False Positive",
+    cls: "border-border-strong bg-surface-2 text-fg-muted",
+  },
+};
+
+function statusBadge(status: AttackStateStatus) {
+  return STATUS_BADGE[status] ?? null;
+}
 
 function entitySummary(attack: AttackState) {
   const entities = [
@@ -60,6 +75,10 @@ export function AttackCard({ attack }: Props) {
             {attack.name}
           </h3>
           <div className="flex flex-wrap items-center gap-1">
+            {(() => {
+              const b = statusBadge(attack.status);
+              return b ? <span className={`vigil-badge ${b.cls}`}>{b.label}</span> : null;
+            })()}
             <span
               className={`vigil-badge ${phaseColorClasses(attack.current_phase)}`}
             >
@@ -90,8 +109,10 @@ export function AttackCard({ attack }: Props) {
           <div className="text-right text-[10px] text-fg-faint font-mono leading-relaxed whitespace-nowrap">
             <div className="text-fg-muted">{timeAgo(attack.last_seen)}</div>
             <div>
-              {attack.evidence?.length ?? 0}{" "}
-              {(attack.evidence?.length ?? 0) === 1 ? "Signal" : "Signals"}
+              {(() => {
+                const n = attack.evidence_count ?? attack.evidence?.length ?? 0;
+                return `${n} ${n === 1 ? "Signal" : "Signals"}`;
+              })()}
             </div>
           </div>
 

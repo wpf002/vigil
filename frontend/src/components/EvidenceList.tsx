@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { phaseColorClasses, phaseLabel, timeAgo } from "@/lib/format";
+import { EnrichableValue } from "@/components/EnrichableValue";
 import type { EvidenceItem } from "@/types/attacks";
 
 interface Props {
@@ -117,14 +118,25 @@ function EvidenceDetail({ item }: { item: EvidenceItem }) {
   const add = (label: string, val: unknown) => {
     if (val !== null && val !== undefined && val !== "") rows.push([label, String(val)]);
   };
-  add("Host", item.host ?? (item.entity_type === "host" ? item.entity_value : null));
-  add("IP", item.ip);
+  // IOC rows are enrichable in place (host/ip/destination → OSINT lookup).
+  const addIoc = (label: string, display: unknown, iocValue: unknown) => {
+    if (display !== null && display !== undefined && display !== "") {
+      rows.push([
+        label,
+        iocValue ? <EnrichableValue value={String(iocValue)} /> : String(display),
+      ]);
+    }
+  };
+  const host = item.host ?? (item.entity_type === "host" ? item.entity_value : null);
+  addIoc("Host", host, host);
+  addIoc("IP", item.ip, item.ip);
   add("User", item.user);
   add("Process", item.process);
   add("Command line", item.command_line);
-  add(
+  addIoc(
     "Destination",
     item.dest_ip ? `${item.dest_ip}${item.dest_port ? `:${item.dest_port}` : ""}` : null,
+    item.dest_ip,
   );
   add("Detection", item.detection_id);
   add("Rule", item.rule_name);
@@ -133,6 +145,18 @@ function EvidenceDetail({ item }: { item: EvidenceItem }) {
   add("Raw reference", item.raw_reference);
 
   const raw = item.raw_event ?? null;
+
+  // High-level entities the rule keyed on — highlighted in the raw event so an
+  // analyst can see exactly which parts of each event matched.
+  const matchTerms = [
+    item.entity_value,
+    item.host,
+    item.ip,
+    item.user,
+    item.process,
+    item.dest_ip,
+  ].filter((t): t is string => typeof t === "string" && t.length > 0);
+  const uniqueTerms = [...new Set(matchTerms)];
 
   return (
     <div className="px-4 pb-4 pt-1 bg-surface-2/40">
@@ -149,14 +173,47 @@ function EvidenceDetail({ item }: { item: EvidenceItem }) {
       </div>
       {raw && Object.keys(raw).length > 0 && (
         <div className="mt-3">
-          <div className="text-[10px] uppercase tracking-wider text-fg-faint font-mono mb-1">
-            Raw Event
+          <div className="flex flex-wrap items-center gap-2 mb-1">
+            <span className="text-[10px] uppercase tracking-wider text-fg-faint font-mono">
+              Raw Event
+            </span>
+            {uniqueTerms.length > 0 && (
+              <span className="flex flex-wrap items-center gap-1">
+                <span className="text-[10px] font-mono text-fg-faint">matched:</span>
+                {uniqueTerms.map((t) => (
+                  <span
+                    key={t}
+                    className="text-[10px] font-mono px-1 rounded-sm bg-accent/20 text-accent-hover"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </span>
+            )}
           </div>
           <pre className="text-[11px] font-mono text-fg-muted bg-bg border border-border rounded-sm p-2 overflow-x-auto">
-            {JSON.stringify(raw, null, 2)}
+            {highlightTerms(JSON.stringify(raw, null, 2), uniqueTerms)}
           </pre>
         </div>
       )}
     </div>
+  );
+}
+
+/** Wrap occurrences of `terms` in the text with a highlight mark. Longer terms
+ * match first so a host isn't partially shadowed by a shorter overlapping term. */
+function highlightTerms(text: string, terms: string[]): ReactNode[] {
+  const uniq = [...new Set(terms.filter(Boolean))].sort((a, b) => b.length - a.length);
+  if (uniq.length === 0) return [text];
+  const escaped = uniq.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`(${escaped.join("|")})`, "g");
+  return text.split(re).map((part, i) =>
+    uniq.includes(part) ? (
+      <mark key={i} className="bg-accent/25 text-accent-hover rounded-sm px-0.5">
+        {part}
+      </mark>
+    ) : (
+      <span key={i}>{part}</span>
+    ),
   );
 }

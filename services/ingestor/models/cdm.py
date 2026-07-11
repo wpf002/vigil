@@ -65,6 +65,7 @@ class SIEMMode(str, Enum):
     ES = "es"
     CORE = "core"
     HEC = "hec"
+    SEARCH = "search"
     SENTINEL = "sentinel"
     ELASTIC = "elastic"
     DEMO = "demo"

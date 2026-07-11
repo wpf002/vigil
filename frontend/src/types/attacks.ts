@@ -113,6 +113,9 @@ export interface AttackState {
   cloud_resources: string[];
 
   evidence: EvidenceItem[];
+  // List/table responses strip the evidence array (it can be thousands of
+  // items) and send this count instead. Present on list rows, absent on detail.
+  evidence_count?: number;
 
   narrative?: string | null;
   predicted_next_phase?: MITRETactic | null;

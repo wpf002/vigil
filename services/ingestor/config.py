@@ -21,6 +21,10 @@ class IngestorConfig(BaseSettings):
     splunk_max_events_per_poll: int = 500
     splunk_es_status_filter: list[str] = ["new"]
     splunk_es_severity_filter: list[str] = ["critical", "high", "medium"]
+    # SEARCH mode: poll a raw index directly (license-independent — no alerting).
+    # The ingestor runs VIGIL's detection evaluator over the returned rows.
+    splunk_search_index: str = "vigil_test"
+    splunk_search_query: Optional[str] = None  # extra SPL after the index filter
 
     # Microsoft Sentinel.
     sentinel_tenant_id: Optional[str] = None

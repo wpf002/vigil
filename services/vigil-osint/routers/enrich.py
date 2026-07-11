@@ -83,14 +83,15 @@ async def enrich(
 
     automatable = []
     for connector in candidates:
-        if connector.policy.allow_automation:
+        if connector.can_automate():
             automatable.append(connector)
         else:
-            # Policy forbids automated execution → hand back a link instead.
+            # Policy forbids execution, or a required API key isn't configured →
+            # hand back a link to the provider's UI instead of calling out.
             deep_links.append(DeepLink(
                 connector=connector.name,
                 url=connector.deep_link_for(uql),
-                reason="automation_disabled_by_policy",
+                reason=connector.automation_block_reason(),
             ))
 
     if automatable:
@@ -106,6 +107,30 @@ async def enrich(
         deep_links=deep_links,
         errors=errors,
     )
+
+
+@router.get("/connectors")
+async def list_connectors(
+    principal: TenantPrincipal = Depends(get_principal),
+) -> dict[str, Any]:
+    """Metadata for every registered enrichment source — powers the Settings
+    → Enrichment Sources page. `automatable` reflects live env (a connector
+    needing an unset API key reports False + a reason)."""
+    sources = []
+    for c in registry.all():
+        sources.append({
+            "name": c.name,
+            "category": c.category,
+            "auth_type": c.auth_type,
+            "capabilities": c.capabilities,
+            "homepage": c.homepage,
+            "automatable": c.can_automate(),
+            "block_reason": c.automation_block_reason() or None,
+            "requires_key": c.auth_type == "api_key",
+            "api_key_env": c.api_key_env,
+        })
+    sources.sort(key=lambda s: s["name"])
+    return {"connectors": sources}
 
 
 @router.get("/entities/{value}")

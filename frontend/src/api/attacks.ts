@@ -32,6 +32,33 @@ export async function listAttacks(
   return unwrap(res.data);
 }
 
+export interface AttacksPage {
+  items: AttackState[];
+  total: number;
+}
+
+/** Like listAttacks but also returns the total match count from meta, for
+ * server-side pagination (used by the Resolved view). */
+export async function listAttacksPaged(
+  filters: AttackListFilters = {},
+): Promise<AttacksPage> {
+  const params: Record<string, unknown> = {};
+  if (filters.phase) params.phase = filters.phase;
+  if (filters.min_confidence !== undefined && filters.min_confidence > 0)
+    params.min_confidence = filters.min_confidence;
+  if (filters.momentum) params.momentum = filters.momentum;
+  if (filters.status) params.status = filters.status;
+  params.limit = filters.limit ?? 50;
+  params.offset = filters.offset ?? 0;
+
+  const res = await apiClient.get<ApiEnvelope<AttackState[]>>("/attacks", {
+    params,
+  });
+  const items = unwrap(res.data);
+  const total = Number(res.data.meta?.total ?? items.length);
+  return { items, total };
+}
+
 export async function getAttack(attackId: string): Promise<AttackState> {
   const res = await apiClient.get<ApiEnvelope<AttackState>>(
     `/attacks/${attackId}`,

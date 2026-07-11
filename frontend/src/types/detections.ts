@@ -5,6 +5,7 @@ export interface DetectionStateImpact {
   transitions_to?: string;
   confidence_contribution?: number;
   progression?: boolean;
+  conditions?: { field: string; op: string; value: unknown }[];
 }
 
 export interface DetectionPerformance {

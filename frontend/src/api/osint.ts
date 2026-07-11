@@ -64,3 +64,42 @@ export async function enrich(
   });
   return res.data;
 }
+
+export interface Connector {
+  name: string;
+  category: string;
+  auth_type: string;
+  capabilities: string[];
+  homepage: string;
+  automatable: boolean;
+  block_reason: string | null;
+  requires_key: boolean;
+  api_key_env: string | null;
+}
+
+export async function listConnectors(): Promise<Connector[]> {
+  const res = await osintClient.get<{ connectors: Connector[] }>(
+    "/osint/connectors",
+  );
+  return res.data.connectors;
+}
+
+// Auto-enrich toggle — persisted client-side. When on, EnrichableValue fetches
+// automatically on first render instead of waiting for a click.
+const AUTO_ENRICH_KEY = "vigil.autoEnrich";
+
+export function getAutoEnrich(): boolean {
+  try {
+    return localStorage.getItem(AUTO_ENRICH_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+export function setAutoEnrich(on: boolean): void {
+  try {
+    localStorage.setItem(AUTO_ENRICH_KEY, on ? "true" : "false");
+  } catch {
+    // ignore storage failures (private mode, etc.)
+  }
+}

@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from . import simulation
 from .auth import authenticate, close_pool, get_pool_optional
 from .cdm_rules import DEFAULT_RULES, apply_match, best_match, evaluate
+from .db_rules import rules_for_tenant
 from .config import IngestorConfig, get_config
 from .connectors.demo import DemoConnector
 from .connectors.elastic import ElasticConnector
@@ -37,7 +38,7 @@ from .producer.kafka_producer import VIGILProducer
 logger = structlog.get_logger(__name__)
 
 
-SPLUNK_MODES = {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC}
+SPLUNK_MODES = {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC, SIEMMode.SEARCH}
 
 
 class IngestorEngine:
@@ -135,6 +136,8 @@ class IngestorEngine:
                 for alert in alerts:
                     events.extend(self.normalizer.normalize_core_alert(alert, self.config.tenant_id))
                 return events
+            if mode == SIEMMode.SEARCH:
+                return await self._poll_search(earliest, latest)
             return []
 
         if mode == SIEMMode.SENTINEL:
@@ -150,11 +153,38 @@ class IngestorEngine:
 
         return []
 
+    async def _poll_search(self, earliest: str, latest: str) -> list[CDMEvent]:
+        """SEARCH mode: pull raw events from a Splunk index and run VIGIL's own
+        detection evaluator over them. Only rows that match a detection become
+        signals — so what shows up in VIGIL is genuinely detected from the logs,
+        not pre-classified by Splunk. License-independent (no alerting needed)."""
+        cfg = self.config
+        extra = f" {cfg.splunk_search_query}" if cfg.splunk_search_query else ""
+        spl = (
+            f"index={cfg.splunk_search_index}{extra} "
+            f"| table _time host user process_name CommandLine ParentImage dest_ip src_ip"
+        )
+        rows = await self._connector.run_search(
+            spl=spl, earliest=earliest, latest=latest,
+            max_count=cfg.splunk_max_events_per_poll,
+        )
+        tenant_rules = await rules_for_tenant(await get_pool_optional(), cfg.tenant_id)
+        all_rules = DEFAULT_RULES + tenant_rules
+        matched: list[CDMEvent] = []
+        for row in rows:
+            event = self.normalizer.normalize_search_row(row, cfg.tenant_id)
+            rule = best_match(event, all_rules)
+            if rule:
+                apply_match(event, rule)
+                matched.append(event)
+        logger.info("ingestor.search.evaluated", rows=len(rows), matched=len(matched))
+        return matched
+
     def _build_connector(self):
         mode = self.config.siem_mode
         cfg = self.config
 
-        if mode in {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC}:
+        if mode in {SIEMMode.ES, SIEMMode.CORE, SIEMMode.HEC, SIEMMode.SEARCH}:
             kwargs = dict(
                 host=cfg.splunk_host,
                 username=cfg.splunk_username,
@@ -295,7 +325,9 @@ async def ingest_signal(event: CDMEvent, authorization: str = Header(default="")
     # SIEM-sourced) are passed through untouched.
     matched = None
     if not event.detection_id:
-        rule = best_match(event, DEFAULT_RULES)
+        # Built-in rules + this tenant's authored detection logic (cached).
+        tenant_rules = await rules_for_tenant(await get_pool_optional(), tenant_id)
+        rule = best_match(event, DEFAULT_RULES + tenant_rules)
         if rule:
             apply_match(event, rule)
             matched = rule.detection_id
@@ -318,9 +350,11 @@ async def detect_evaluate(event: CDMEvent, authorization: str = Header(default="
     WITHOUT publishing — the testing surface for the detection runtime (Big Bet
     1). Returns every matching rule and the best match.
     """
-    await authenticate(authorization)
-    matches = evaluate(event, DEFAULT_RULES)
-    best = best_match(event, DEFAULT_RULES)
+    tenant_id = await authenticate(authorization)
+    tenant_rules = await rules_for_tenant(await get_pool_optional(), tenant_id)
+    all_rules = DEFAULT_RULES + tenant_rules
+    matches = evaluate(event, all_rules)
+    best = best_match(event, all_rules)
     return {
         "matched": [
             {"detection_id": r.detection_id, "name": r.name, "tactic": r.tactic,
@@ -328,7 +362,7 @@ async def detect_evaluate(event: CDMEvent, authorization: str = Header(default="
             for r in matches
         ],
         "best": best.detection_id if best else None,
-        "rule_count": len(DEFAULT_RULES),
+        "rule_count": len(all_rules),
     }
 
 

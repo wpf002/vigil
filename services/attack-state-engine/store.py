@@ -242,22 +242,25 @@ class AttackStateStore:
             )
         return [_deserialize_state(r["state"]) for r in rows]
 
-    async def search(
+    def _search_clauses(
         self,
         tenant_id: str,
-        phase: Optional[MITRETactic] = None,
-        min_confidence: Optional[float] = None,
-        momentum: Optional[Momentum] = None,
-        status: Optional[AttackStateStatus] = AttackStateStatus.ACTIVE,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> list[AttackState]:
+        phase: Optional[MITRETactic],
+        min_confidence: Optional[float],
+        momentum: Optional[Momentum],
+        status: Optional[AttackStateStatus],
+        exclude_active: bool,
+    ) -> tuple[list[str], list[Any]]:
         clauses = ["tenant_id = $1"]
         params: list[Any] = [tenant_id]
 
         if status is not None:
             params.append(status.value)
             clauses.append(f"status = ${len(params)}")
+        elif exclude_active:
+            # "Resolved" view: everything that is no longer active.
+            params.append(AttackStateStatus.ACTIVE.value)
+            clauses.append(f"status <> ${len(params)}")
         if phase is not None:
             params.append(phase.value)
             clauses.append(f"current_phase = ${len(params)}")
@@ -267,7 +270,22 @@ class AttackStateStore:
         if momentum is not None:
             params.append(momentum.value)
             clauses.append(f"momentum = ${len(params)}")
+        return clauses, params
 
+    async def search(
+        self,
+        tenant_id: str,
+        phase: Optional[MITRETactic] = None,
+        min_confidence: Optional[float] = None,
+        momentum: Optional[Momentum] = None,
+        status: Optional[AttackStateStatus] = AttackStateStatus.ACTIVE,
+        limit: int = 50,
+        offset: int = 0,
+        exclude_active: bool = False,
+    ) -> list[AttackState]:
+        clauses, params = self._search_clauses(
+            tenant_id, phase, min_confidence, momentum, status, exclude_active
+        )
         params.append(limit)
         limit_idx = len(params)
         params.append(offset)
@@ -282,6 +300,23 @@ class AttackStateStore:
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(sql, *params)
         return [_deserialize_state(r["state"]) for r in rows]
+
+    async def search_count(
+        self,
+        tenant_id: str,
+        phase: Optional[MITRETactic] = None,
+        min_confidence: Optional[float] = None,
+        momentum: Optional[Momentum] = None,
+        status: Optional[AttackStateStatus] = AttackStateStatus.ACTIVE,
+        exclude_active: bool = False,
+    ) -> int:
+        clauses, params = self._search_clauses(
+            tenant_id, phase, min_confidence, momentum, status, exclude_active
+        )
+        sql = f"SELECT COUNT(*) AS n FROM attack_states WHERE {' AND '.join(clauses)}"
+        async with self.pool.acquire() as conn:
+            row = await conn.fetchrow(sql, *params)
+        return int(row["n"]) if row else 0
 
     async def stats_summary(self, tenant_id: str) -> dict[str, Any]:
         sql_phase = """

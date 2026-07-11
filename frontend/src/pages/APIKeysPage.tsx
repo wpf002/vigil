@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Key, Copy, X, Trash2, AlertTriangle } from "lucide-react";
+import { SettingsTabs } from "@/components/SettingsTabs";
 import {
   createAPIKey,
   listAPIKeys,
@@ -39,6 +40,8 @@ export function APIKeysPage() {
           Create key
         </button>
       </div>
+
+      <SettingsTabs />
 
       {keys.isLoading ? (
         <div className="vigil-card p-6 text-center text-fg-muted font-mono text-sm">

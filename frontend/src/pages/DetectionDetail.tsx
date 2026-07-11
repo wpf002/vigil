@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, RotateCcw } from "lucide-react";
 import {
@@ -170,6 +170,32 @@ function OverviewTab({ detection }: { detection: ReturnType<typeof getDetection>
           <Cell label="Progression" value={yesNo(si.progression)} />
         </dl>
       </div>
+
+      <div className="vigil-card p-4">
+        <div className="text-[11px] uppercase font-mono text-fg-faint tracking-wider mb-2">
+          Rule Logic
+        </div>
+        {(si.conditions ?? []).length === 0 ? (
+          <p className="text-[12px] font-mono text-fg-faint">
+            No conditions defined — this detection is metadata-only and won't
+            match in-transit events. Edit it to add rule logic.
+          </p>
+        ) : (
+          <ul className="space-y-1 text-[12px] font-mono">
+            {(si.conditions ?? []).map((c, i) => (
+              <li key={i} className="flex items-center gap-2">
+                {i > 0 && <span className="text-fg-faint text-[10px]">AND</span>}
+                <span className="text-fg">{c.field}</span>
+                <span className="text-accent-hover">{c.op}</span>
+                {c.op !== "exists" && (
+                  <span className="text-fg-muted break-all">{String(c.value)}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {detection.notes && (
         <div className="vigil-card p-4">
           <div className="text-[11px] uppercase font-mono text-fg-faint tracking-wider mb-2">
@@ -318,6 +344,7 @@ function PerformanceTab({ detectionId }: { detectionId: string }) {
               <tr className="text-left text-[11px] uppercase tracking-wider text-fg-faint">
                 <th className="px-3 py-2">Fired</th>
                 <th className="px-3 py-2">Phase</th>
+                <th className="px-3 py-2">Where</th>
                 <th className="px-3 py-2">Status</th>
                 <th className="px-3 py-2 text-right">Confidence</th>
                 <th className="px-3 py-2">Outcome</th>
@@ -329,6 +356,19 @@ function PerformanceTab({ detectionId }: { detectionId: string }) {
                 <tr key={s.signal_id} className="border-b border-border last:border-0">
                   <td className="px-3 py-2 text-fg-muted">{timeAgo(s.fired_at)}</td>
                   <td className="px-3 py-2 text-fg">{s.phase_contributed ?? "—"}</td>
+                  <td className="px-3 py-2">
+                    {s.attack_id ? (
+                      <Link
+                        to={`/attacks/${s.attack_id}`}
+                        className="text-accent-hover hover:underline"
+                        title="Open the attack where this signal fired"
+                      >
+                        View attack
+                      </Link>
+                    ) : (
+                      <span className="text-fg-faint">—</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-fg-muted">
                     {s.status_contributed ?? "—"}
                   </td>

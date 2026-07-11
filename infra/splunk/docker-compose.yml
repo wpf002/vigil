@@ -1,0 +1,45 @@
+# Free Splunk instance for testing VIGIL against real SIEM data.
+#
+# Isolated from the main VIGIL stack on purpose — bring it up on its own with:
+#   docker compose -f infra/splunk/docker-compose.yml up -d
+# so it can never interfere with the app's compose services.
+#
+# COST: $0. On first boot Splunk runs a 60-day Enterprise TRIAL (full features,
+# including the scheduled saved-search alerts VIGIL polls). After 60 days it
+# reverts to the free "Splunk Free" license (500 MB/day, free forever) — note
+# that Splunk Free DISABLES alerting/scheduled searches, so for ongoing alert
+# polling either re-create the trial or use the ad-hoc search path (see README).
+# To start on the free license immediately instead, set SPLUNK_LICENSE_URI=Free.
+
+services:
+  splunk:
+    image: splunk/splunk:9.2
+    # Splunk publishes amd64 only. On Apple Silicon this runs under emulation
+    # (slower boot, ~3–4 min) — Docker Desktop's Rosetta/qemu handles it.
+    platform: linux/amd64
+    container_name: vigil-splunk
+    hostname: vigil-splunk
+    environment:
+      - SPLUNK_START_ARGS=--accept-license
+      - SPLUNK_PASSWORD=${SPLUNK_PASSWORD:-Changeme123!}
+      # HTTP Event Collector token used by the sample-data loader.
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-vigil-hec-token-00000000}
+      # Uncomment to run on the free-forever license from first boot (no alerting):
+      # - SPLUNK_LICENSE_URI=Free
+    ports:
+      - "8000:8000"   # Splunk Web UI (http://localhost:8000, admin / SPLUNK_PASSWORD)
+      - "8088:8088"   # HTTP Event Collector (HEC) — sample data ingestion
+      - "8089:8089"   # Management REST API — this is what the VIGIL ingestor polls
+    volumes:
+      - splunk_var:/opt/splunk/var
+      - splunk_etc:/opt/splunk/etc
+    healthcheck:
+      test: ["CMD", "curl", "-fk", "https://localhost:8089/services/server/info", "-u", "admin:${SPLUNK_PASSWORD:-Changeme123!}"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+
+volumes:
+  splunk_var:
+  splunk_etc:
