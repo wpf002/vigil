@@ -16,12 +16,19 @@ Config via env:
 
 from __future__ import annotations
 
+import glob
 import json
 import os
 import random
 import time
 
 import httpx
+
+# Real Windows telemetry (parsed EVTX attack samples + recorded Atomic Red Team
+# runs) bundled under datasets/. Replayed into Splunk once at startup so VIGIL
+# detects genuine techniques — not just the synthetic generator traffic.
+DATASETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datasets")
+REPLAY_DATASETS = os.getenv("REPLAY_DATASETS", "true").lower() in ("1", "true", "yes")
 
 HEC_URL = os.getenv("SPLUNK_HEC_URL", "https://splunk.railway.internal:8088").rstrip("/")
 HEC_TOKEN = os.getenv("SPLUNK_HEC_TOKEN", "")
@@ -108,9 +115,34 @@ def attack_chain() -> tuple[str, list[dict]]:
     return host, out
 
 
+def replay_datasets() -> None:
+    """Push the bundled real-telemetry datasets (EVTX + Atomic Red Team) into
+    Splunk once, in batches, with current timestamps so the ingestor polls them."""
+    files = sorted(glob.glob(os.path.join(DATASETS_DIR, "*.jsonl")))
+    total = 0
+    for f in files:
+        events = []
+        for ln in open(f):
+            ln = ln.strip()
+            if not ln:
+                continue
+            try:
+                events.append(json.loads(ln))
+            except json.JSONDecodeError:
+                continue
+        for i in range(0, len(events), 50):
+            send(events[i:i + 50])
+            total += len(events[i:i + 50])
+            time.sleep(0.3)
+        print(f"[generator] replayed {len(events)} events from {os.path.basename(f)}", flush=True)
+    print(f"[generator] real-telemetry replay complete: {total} events", flush=True)
+
+
 def main() -> None:
     print(f"[generator] feeding {HEC_URL} index={INDEX} "
           f"benign/{BENIGN_INTERVAL}s attack/{ATTACK_INTERVAL}s", flush=True)
+    if REPLAY_DATASETS:
+        replay_datasets()
     last_attack = time.monotonic() - ATTACK_INTERVAL + 60  # first attack ~1 min in
     while True:
         send(benign_batch())

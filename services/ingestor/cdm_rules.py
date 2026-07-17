@@ -182,7 +182,8 @@ DEFAULT_RULES: list[CDMRule] = [
         detection_id="D1-LSASS-MEMORY-ACCESS",
         name="LSASS Memory Access",
         tactic="credential-access", technique_id="T1003.001", confidence=0.75, status="Confirmed",
-        conditions=[Condition("process.command_line", "regex", r"lsass(\.exe|\.dmp|\b)")],
+        conditions=[Condition("process.command_line", "regex",
+                              r"lsass|sekurlsa|minidump(writedump)?|comsvcs\.dll|mimikatz")],
     ),
     CDMRule(
         detection_id="D8-DOMAIN-ACCOUNT-DISCOVERY",
@@ -194,6 +195,6 @@ DEFAULT_RULES: list[CDMRule] = [
         detection_id="D4-LATERAL-MOVEMENT-COMPROMISED-CREDS",
         name="Lateral Movement via Admin Shares / PsExec",
         tactic="lateral-movement", technique_id="T1021.002", confidence=0.65,
-        conditions=[Condition("process.command_line", "regex", r"psexec|\\admin\$|\\c\$")],
+        conditions=[Condition("process.command_line", "regex", r"psexec|psexesvc|\\admin\$|\\c\$")],
     ),
 ]
