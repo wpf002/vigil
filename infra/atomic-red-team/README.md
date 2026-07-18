@@ -34,9 +34,16 @@ and ships the resulting process telemetry to Splunk HEC:
 Requirements:
 - A Windows VM you own and can safely detonate techniques on (ART runs real commands).
 - **Sysmon** installed (EventID 1) or "Audit Process Creation" enabled (Security 4688).
-- Splunk HEC reachable from the host. The Railway Splunk keeps HEC (8088) on the
-  private network; expose it with a Railway **TCP proxy** on port 8088, then pass
-  that `host:port` as `-SplunkHecUrl`. (Or point at an on-prem Splunk.)
+- Splunk HEC reachable from the host. On the Railway demo, HEC (8088) is exposed via
+  a Railway **TCP proxy** — pass that `host:port` as `-SplunkHecUrl`. (Railway allows
+  one TCP proxy per service; the Splunk service's proxy currently points at HEC 8088.
+  The proxy host:port and HEC token are shown in the Railway dashboard / provided
+  separately — they are not committed here.) Or point at an on-prem Splunk.
+
+The ingestor uses an overlapping look-back poll window with de-dup, so a bursty
+live ART run (many events in a few seconds) is reliably caught, not missed at a
+window boundary. Verified end-to-end: a 5-technique burst → HEC → Splunk →
+ingestor (`matched=5`) → attack in VIGIL Active Threats.
 
 VIGIL's ingestor polls `vigil_test`, applies detections, and the attack appears
 in Active Threats — genuinely from your own ART execution.

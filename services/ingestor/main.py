@@ -54,6 +54,9 @@ class IngestorEngine:
         self._last_poll: Optional[datetime] = None
         self._total_ingested: int = 0
         self._poll_errors: int = 0
+        # SEARCH mode: IDs of matched events already published, so an overlapping
+        # (lookback) poll window doesn't double-count. Bounded.
+        self._seen_matched: set[str] = set()
 
     async def start(self) -> None:
         """Boot the ingest loop. SIEM unreachable / unconfigured leaves the
@@ -160,12 +163,19 @@ class IngestorEngine:
         not pre-classified by Splunk. License-independent (no alerting needed)."""
         cfg = self.config
         extra = f" {cfg.splunk_search_query}" if cfg.splunk_search_query else ""
+        # Look back further than the poll interval so events that Splunk indexes
+        # a little late aren't missed at the window boundary (critical for bursty
+        # sources like a live Atomic Red Team run). Dedup by Splunk's _cd below.
+        try:
+            earliest_eff = str(float(latest) - (cfg.splunk_poll_interval_seconds + 180))
+        except (TypeError, ValueError):
+            earliest_eff = earliest
         spl = (
             f"index={cfg.splunk_search_index}{extra} "
-            f"| table _time host user process_name CommandLine ParentImage dest_ip src_ip"
+            f"| table _time _cd host user process_name CommandLine ParentImage dest_ip src_ip"
         )
         rows = await self._connector.run_search(
-            spl=spl, earliest=earliest, latest=latest,
+            spl=spl, earliest=earliest_eff, latest=latest,
             max_count=cfg.splunk_max_events_per_poll,
         )
         tenant_rules = await rules_for_tenant(await get_pool_optional(), cfg.tenant_id)
@@ -174,9 +184,16 @@ class IngestorEngine:
         for row in rows:
             event = self.normalizer.normalize_search_row(row, cfg.tenant_id)
             rule = best_match(event, all_rules)
-            if rule:
-                apply_match(event, rule)
-                matched.append(event)
+            if not rule:
+                continue
+            sid = event.source_event_id
+            if sid in self._seen_matched:
+                continue  # already published in an earlier overlapping window
+            apply_match(event, rule)
+            matched.append(event)
+            self._seen_matched.add(sid)
+        if len(self._seen_matched) > 5000:
+            self._seen_matched = set(list(self._seen_matched)[-2500:])
         logger.info("ingestor.search.evaluated", rows=len(rows), matched=len(matched))
         return matched
 

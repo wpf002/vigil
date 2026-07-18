@@ -123,6 +123,12 @@ class EventNormalizer:
         the row is a raw log line. The ingestor runs VIGIL's own detection
         evaluator over it to decide whether it's an attack signal.
         """
+        # Splunk's | table returns multivalue fields as lists; flatten to a
+        # single string so downstream (entity extraction, regex rules) is safe.
+        row = {
+            k: (next((x for x in v if x), None) if isinstance(v, list) else v)
+            for k, v in row.items()
+        }
         return CDMEvent(
             tenant_id=tenant_id,
             source_event_id=(
