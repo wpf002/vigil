@@ -27,8 +27,21 @@ import type { AttackStateStatus } from "@/types/attacks";
 const SPLUNK_URL = import.meta.env.VITE_SPLUNK_URL ?? "";
 const SPLUNK_INDEX = import.meta.env.VITE_SPLUNK_INDEX ?? "vigil_test";
 
-/** Deep-link into Splunk's search UI showing the raw logs (this attack's hosts,
- * in the source index) that the ingestor's detections fired on. */
+// Only the malicious lines — mirrors the ingestor's CDM detection rules
+// (services/ingestor/cdm_rules.py) so the link shows exactly the events that
+// fire a detection, not all host activity.
+const MALICIOUS_FILTER =
+  '(CommandLine="*-enc*" OR CommandLine="*FromBase64*" OR CommandLine="*lsass*" ' +
+  'OR CommandLine="*sekurlsa*" OR CommandLine="*MiniDump*" OR CommandLine="*comsvcs*" ' +
+  'OR CommandLine="*mimikatz*" OR CommandLine="*ntds*" OR CommandLine="*psexec*" ' +
+  'OR CommandLine="*Invoke-WebRequest*" OR CommandLine="*Compress-Archive*" ' +
+  'OR process_name="fodhelper.exe" OR process_name="certutil.exe" ' +
+  'OR (process_name="sc.exe" CommandLine="*create*") ' +
+  'OR (process_name="net.exe" CommandLine="*/domain*") ' +
+  'OR (process_name="whoami.exe" CommandLine="*/priv*"))';
+
+/** Deep-link into Splunk's search UI showing ONLY the matched malicious logs
+ * (this attack's hosts, in the source index) that the detections fired on. */
 function splunkSearchUrl(attack: { hosts?: string[] | null }): string | null {
   if (!SPLUNK_URL) return null;
   const hosts = (attack.hosts ?? []).filter(
@@ -37,7 +50,7 @@ function splunkSearchUrl(attack: { hosts?: string[] | null }): string | null {
   const hostClause = hosts.length
     ? " (" + hosts.map((h) => `host="${h}"`).join(" OR ") + ")"
     : "";
-  const spl = `search index=${SPLUNK_INDEX}${hostClause} | sort -_time`;
+  const spl = `search index=${SPLUNK_INDEX}${hostClause} ${MALICIOUS_FILTER} | sort -_time`;
   return (
     `${SPLUNK_URL.replace(/\/$/, "")}/en-US/app/search/search` +
     `?q=${encodeURIComponent(spl)}&earliest=-7d&latest=now`
@@ -285,7 +298,7 @@ export function AttackDetail() {
               href={splunkSearchUrl(attack)!}
               target="_blank"
               rel="noopener noreferrer"
-              title="Open Splunk with the raw logs that triggered this attack"
+              title="Open Splunk showing only the malicious logs that triggered this attack's detections"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono border border-border bg-surface-2 text-fg-muted rounded-sm hover:text-fg hover:border-accent/40"
             >
               <ExternalLink size={12} /> View source logs in Splunk
