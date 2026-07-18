@@ -205,10 +205,18 @@ class EventNormalizer:
         process_name = raw.get("process_name") or raw.get("process") or raw.get("Image")
         if not process_name:
             return None
+        # Sysmon's Image (and Attack Range telemetry) is a full path; reduce it to
+        # the executable name so equals-style rules (process_name == "fodhelper.exe")
+        # match. Values that are already bare names (our generator/EVTX) are untouched.
+        if isinstance(process_name, str) and ("\\" in process_name or "/" in process_name):
+            process_name = process_name.replace("/", "\\").split("\\")[-1]
+        parent = raw.get("parent_process_name") or raw.get("ParentImage")
+        if isinstance(parent, str) and ("\\" in parent or "/" in parent):
+            parent = parent.replace("/", "\\").split("\\")[-1]
         return ProcessEntity(
             process_name=process_name,
             process_id=self._to_int(raw.get("process_id") or raw.get("ProcessId")),
-            parent_process_name=raw.get("parent_process_name") or raw.get("ParentImage"),
+            parent_process_name=parent,
             parent_process_id=self._to_int(raw.get("parent_process_id")),
             command_line=raw.get("process") or raw.get("CommandLine") or raw.get("cmdline"),
             hash_md5=raw.get("MD5") or raw.get("file_hash"),

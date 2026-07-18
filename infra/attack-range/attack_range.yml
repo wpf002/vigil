@@ -1,0 +1,77 @@
+# VIGIL profile for Splunk Attack Range (https://github.com/splunk/attack_range).
+#
+# Spins up, in YOUR AWS account, a real instrumented lab: a Splunk server + a
+# Windows Server 2022 victim with Sysmon that forwards its telemetry to Splunk.
+# You then run attacks against it (Atomic Red Team) and point VIGIL's ingestor
+# at this Splunk over a TRUE EXTERNAL connection (see connect-vigil.sh).
+#
+# Usage (from a cloned splunk/attack_range checkout, with AWS creds configured):
+#   cp <this-file> attack_range.yml     # or: attack_range configure  (then merge)
+#   attack_range build
+#   attack_range show                    # note the Splunk public IP
+#   bash infra/attack-range/connect-vigil.sh <splunk_public_ip> <password>
+#   attack_range simulate -e T1003.001   # detonate a technique -> flows to Splunk -> VIGIL
+#   attack_range destroy                 # TEAR DOWN when done (EC2 costs $/hour)
+#
+# Verify the schema against your attack_range version — this tracks the current
+# (develop) template; older versions use a flatter config.
+
+general:
+  attack_range_password: CHANGE-ME-Strong1!     # change before build
+  cloud_provider: aws
+  attack_range_name: vigil-ar
+  # VPC ingress allow-list (the "allow rules on the VPC"). For the external test,
+  # add the source that runs VIGIL's ingestor:
+  #   - a LOCAL ingestor: your workstation's public IP as x.x.x.x/32
+  #   - the Railway ingestor: its egress isn't static, so either use 0.0.0.0/0 for
+  #     the short test window, or front it with the attack_range built-in VPN.
+  ip_whitelist: 0.0.0.0/0
+  description: VIGIL external SIEM test — Splunk + Windows victim (Sysmon) in AWS
+
+aws:
+  region: us-west-2
+  aws_default_tags:
+    project: vigil-attack-range
+    lifecycle: ephemeral
+
+attack_range:
+- name: splunk
+  ami_name_filter: ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*
+  ami_owner: "099720109477"
+  instance_type: t3.xlarge
+  ip_last_octet: 10
+  linux: true
+  user_name: ubuntu
+  roles:
+  - role: P4T12ICK.ludus_ar_splunk
+    vars:
+      ludus_ar_splunk_url: https://download.splunk.com/products/splunk/releases/10.2.2/linux/splunk-10.2.2-80b90d638de6-linux-amd64.tgz
+      ludus_ar_splunk_password: CHANGE-ME-Strong1!
+  - role: P4T12ICK.ar_guacamole
+    vars:
+      ar_guacamole_password: CHANGE-ME-Strong1!
+      ar_guacamole_servers:
+        - name: splunk
+          protocol: ssh
+          hostname: 10.0.2.10
+          port: 22
+          username: ubuntu
+          password: CHANGE-ME-Strong1!
+        - name: windows_server
+          protocol: rdp
+          hostname: 10.0.2.11
+          port: 3389
+          username: Administrator
+          password: CHANGE-ME-Strong1!
+- name: win
+  ami_name_filter: Windows_Server-2022-English-Full-Base-*
+  ami_owner: "801119661308"
+  instance_type: t3.large
+  ip_last_octet: 11
+  windows: true
+  user_name: Administrator
+  roles:
+  - role: P4T12ICK.ludus_ar_windows
+    vars:
+      ludus_ar_windows_password: CHANGE-ME-Strong1!
+      ludus_ar_windows_splunk_ip: 10.0.2.10
