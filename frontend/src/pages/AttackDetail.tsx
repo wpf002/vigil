@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play, ExternalLink } from "lucide-react";
 import {
   completeAction,
   getAttack,
@@ -23,6 +23,26 @@ import {
   titleCase,
 } from "@/lib/format";
 import type { AttackStateStatus } from "@/types/attacks";
+
+const SPLUNK_URL = import.meta.env.VITE_SPLUNK_URL ?? "";
+const SPLUNK_INDEX = import.meta.env.VITE_SPLUNK_INDEX ?? "vigil_test";
+
+/** Deep-link into Splunk's search UI showing the raw logs (this attack's hosts,
+ * in the source index) that the ingestor's detections fired on. */
+function splunkSearchUrl(attack: { hosts?: string[] | null }): string | null {
+  if (!SPLUNK_URL) return null;
+  const hosts = (attack.hosts ?? []).filter(
+    (h) => h && !/^\d{1,3}(\.\d{1,3}){3}$/.test(h), // drop bare dest IPs
+  );
+  const hostClause = hosts.length
+    ? " (" + hosts.map((h) => `host="${h}"`).join(" OR ") + ")"
+    : "";
+  const spl = `search index=${SPLUNK_INDEX}${hostClause} | sort -_time`;
+  return (
+    `${SPLUNK_URL.replace(/\/$/, "")}/en-US/app/search/search` +
+    `?q=${encodeURIComponent(spl)}&earliest=-7d&latest=now`
+  );
+}
 
 export function AttackDetail() {
   const { id } = useParams<{ id: string }>();
@@ -256,9 +276,22 @@ export function AttackDetail() {
       </section>
 
       <section>
-        <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-faint font-mono mb-2">
-          Evidence Chain ({attack.evidence.length})
-        </h2>
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-[10px] uppercase tracking-[0.18em] text-fg-faint font-mono">
+            Evidence Chain ({attack.evidence.length})
+          </h2>
+          {splunkSearchUrl(attack) && (
+            <a
+              href={splunkSearchUrl(attack)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open Splunk with the raw logs that triggered this attack"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono border border-border bg-surface-2 text-fg-muted rounded-sm hover:text-fg hover:border-accent/40"
+            >
+              <ExternalLink size={12} /> View source logs in Splunk
+            </a>
+          )}
+        </div>
         <EvidenceList evidence={attack.evidence} />
       </section>
     </div>
