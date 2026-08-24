@@ -97,6 +97,31 @@ class SplunkBaseConnector:
         except httpx.HTTPStatusError as e:
             raise SplunkAuthError(f"Splunk auth failed: {e.response.status_code}") from e
 
+    async def _post_with_reauth(self, url: str, **kwargs) -> httpx.Response:
+        """POST that survives a Splunk restart.
+
+        Session keys are minted once at connect(); when Splunk restarts (or the
+        key ages out) every subsequent call returns 401 forever. Previously that
+        wedged the poller until someone manually restarted the service — the
+        pipeline could die silently for weeks. Now a 401 triggers one
+        re-authentication and a retry.
+        """
+        resp = await self._client.post(url, **kwargs)
+        if resp.status_code == 401 and self.username and self.password:
+            logger.warning("splunk.session_expired.reauthenticating", host=self.host)
+            await self._authenticate()
+            resp = await self._client.post(url, **kwargs)
+        return resp
+
+    async def _get_with_reauth(self, url: str, **kwargs) -> httpx.Response:
+        """GET counterpart of _post_with_reauth (job status / results polling)."""
+        resp = await self._client.get(url, **kwargs)
+        if resp.status_code == 401 and self.username and self.password:
+            logger.warning("splunk.session_expired.reauthenticating", host=self.host)
+            await self._authenticate()
+            resp = await self._client.get(url, **kwargs)
+        return resp
+
     @retry(
         retry=retry_if_exception_type((SplunkConnectionError, httpx.TimeoutException)),
         stop=stop_after_attempt(3),
@@ -111,16 +136,16 @@ class SplunkBaseConnector:
     ) -> list[dict[str, Any]]:
         if not self._client:
             raise SplunkConnectionError("Not connected.")
+        payload = {
+            "search": f"search {spl}",
+            "earliest_time": earliest,
+            "latest_time": latest,
+            "output_mode": "json",
+            "exec_mode": "normal",
+        }
         try:
-            resp = await self._client.post(
-                f"{self.host}/services/search/jobs",
-                data={
-                    "search": f"search {spl}",
-                    "earliest_time": earliest,
-                    "latest_time": latest,
-                    "output_mode": "json",
-                    "exec_mode": "normal",
-                },
+            resp = await self._post_with_reauth(
+                f"{self.host}/services/search/jobs", data=payload
             )
             resp.raise_for_status()
             sid = resp.json()["sid"]
@@ -135,7 +160,7 @@ class SplunkBaseConnector:
     async def _wait_for_job(self, sid: str, poll_interval: float = 0.5, max_wait: int = 60) -> None:
         elapsed = 0.0
         while elapsed < max_wait:
-            resp = await self._client.get(
+            resp = await self._get_with_reauth(
                 f"{self.host}/services/search/jobs/{sid}",
                 params={"output_mode": "json"},
             )
@@ -152,7 +177,7 @@ class SplunkBaseConnector:
         raise SplunkAPIError(f"Search job {sid} timed out after {max_wait}s")
 
     async def _fetch_results(self, sid: str, count: int = 1000) -> list[dict[str, Any]]:
-        resp = await self._client.get(
+        resp = await self._get_with_reauth(
             f"{self.host}/services/search/jobs/{sid}/results",
             params={"output_mode": "json", "count": count},
         )
@@ -166,7 +191,7 @@ class SplunkBaseConnector:
             pass
 
     async def get_server_info(self) -> dict[str, Any]:
-        resp = await self._client.get(
+        resp = await self._get_with_reauth(
             f"{self.host}/services/server/info",
             params={"output_mode": "json"},
         )
